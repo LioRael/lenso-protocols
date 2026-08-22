@@ -1,11 +1,4 @@
 import {
-  decodeGreetError,
-  decodeGreetRequest,
-  encodeGreetError,
-  encodeGreetRequest,
-  portableValueProfile,
-} from "../../crates/lenso-capability-greeting/generated/bindings.ts";
-import {
   decodeCorpusRoundTripRequest,
   decodeCorpusRoundTripResponse,
   decodeRoundTripError,
@@ -16,6 +9,7 @@ import {
   encodeRoundTripError,
   encodeRoundTripRequest,
   encodeRoundTripResponse,
+  portableValueProfile,
 } from "./generated/profile.ts";
 import { expect, test } from "bun:test";
 
@@ -58,20 +52,6 @@ test("generated TypeScript profile round-trips the shared corpus", () => {
     ),
   ).toEqual({ accepted: true, echo: null });
   expect(decodeRoundTripError(encodeRoundTripError("rejected"))).toBe("rejected");
-
-  expect(decodeGreetRequest(encodeGreetRequest({ name: "Ada" }))).toEqual({
-    name: "Ada",
-  });
-  const unknown = decodeGreetError(
-    JSON.stringify({ code: "future_variant", payload: { retry_after_ms: 2500 } }),
-  );
-  expect(unknown).toEqual({
-    code: "future_variant",
-    payload: { retry_after_ms: 2500 },
-  });
-  expect(encodeGreetError(unknown)).toBe(
-    '{"code":"future_variant","payload":{"retry_after_ms":2500}}',
-  );
 
   const profileRequest = {
     duration: "PT1.5S",

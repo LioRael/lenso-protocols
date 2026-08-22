@@ -10,13 +10,13 @@ use serde_json::json;
 const FIXTURE: &str = "tests/fixtures/profile/capability.json";
 const STREAM_FIXTURE: &str = "tests/fixtures/stream/capability.json";
 const EVENT_FIXTURE: &str = "tests/fixtures/event/capability.json";
-const AUTH_FIXTURE: &str = "../lenso-capability-auth/capability.json";
-const GREETING_FIXTURE: &str = "../lenso-capability-greeting/capability.json";
+const SENSITIVE_FIXTURE: &str = "tests/fixtures/sensitive/capability.json";
+const TRANSFER_FIXTURE: &str = "tests/fixtures/transfer/capability.json";
 
 #[test]
 fn descriptor_marks_generated_types_for_cross_lane_transfer() {
-    let artifacts =
-        generate(Path::new(GREETING_FIXTURE)).expect("Greeting Descriptor should generate");
+    let artifacts = generate(Path::new(TRANSFER_FIXTURE))
+        .expect("cross-lane transfer Descriptor should generate");
 
     assert!(artifacts.metadata.cross_lane_transfer);
     assert!(
@@ -49,12 +49,13 @@ fn browser_request_clients_share_descriptor_identity_and_result_envelopes() {
 
 #[test]
 fn sensitive_schema_fields_generate_redacted_rust_debug() {
-    let artifacts = generate(Path::new(AUTH_FIXTURE)).expect("Auth Descriptor should generate");
+    let artifacts =
+        generate(Path::new(SENSITIVE_FIXTURE)).expect("sensitive Descriptor should generate");
 
     assert!(
         artifacts
             .rust
-            .contains("impl fmt::Debug for AuthenticateRequestCredential")
+            .contains("impl fmt::Debug for InspectRequestCredential")
     );
     assert!(
         artifacts
@@ -64,7 +65,7 @@ fn sensitive_schema_fields_generate_redacted_rust_debug() {
     assert!(
         artifacts
             .rust
-            .contains("impl fmt::Debug for AuthenticateResponseAssertion")
+            .contains("impl fmt::Debug for InspectResponseAssertion")
     );
     assert!(
         artifacts
