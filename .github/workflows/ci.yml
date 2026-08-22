@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check generated portable bindings
+        run: |
+          cargo run --locked -p lenso-contract-codegen -- check \
+            crates/lenso-contract-codegen/tests/fixtures/profile/capability.json \
+            fixtures/portable-contract/generated/profile.rs \
+            fixtures/portable-contract/generated/profile.ts
+      - name: Check workspace
+        run: cargo check --locked --workspace --all-targets
+      - name: Test workspace
+        run: cargo test --locked --workspace
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - name: Test TypeScript conformance
+        run: bun test fixtures/portable-contract/conformance.test.ts

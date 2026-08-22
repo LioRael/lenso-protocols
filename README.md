@@ -1,0 +1,24 @@
+# Lenso Protocols
+
+This repository owns runtime-neutral protocol tooling and portable conformance
+artifacts for Lenso. It does not own the Kernel, host runtimes, product
+Capabilities, or Module implementations.
+
+The source was extracted from `LioRael/lenso` at monorepo commit
+`67d21499548d07e92c2f6529d7c8345e58c067d9` under ADR 0064. Imported subtrees
+retain their relevant Git history.
+
+## Packages
+
+- `lenso-contract-codegen`: generates Rust and TypeScript bindings from a
+  runtime-neutral Capability descriptor.
+- `fixtures/portable-contract`: cross-language value-profile conformance data.
+
+## Validation
+
+```sh
+cargo fmt --all -- --check
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace
+bun test fixtures/portable-contract/conformance.test.ts
+```
