@@ -34,7 +34,7 @@ jobs:
         run: cargo test --locked --workspace
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.21
+          bun-version: 1.4.0
       - name: Install TypeScript workspace
         run: bun install --frozen-lockfile
       - name: Build TypeScript runtime
