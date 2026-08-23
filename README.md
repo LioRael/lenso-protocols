@@ -12,7 +12,14 @@ retain their relevant Git history.
 
 - `lenso-contract-codegen`: generates Rust and TypeScript bindings from a
   runtime-neutral Capability descriptor.
+- `lenso-contract-runtime`: provides the small, platform-neutral wire primitive,
+  serde, and portable JSON surface shared by generated Rust bindings.
 - `fixtures/portable-contract`: cross-language value-profile conformance data.
+
+Generated bindings retain contract-specific values, Provider traits, Clients,
+Endpoints, and operation dispatch. The runtime owns only reusable wire behavior;
+patch and minor runtime releases must preserve that behavior, with conformance
+tests and generated artifact drift checks guarding both sides of the boundary.
 
 ## Validation
 

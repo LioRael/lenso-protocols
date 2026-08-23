@@ -3,6 +3,18 @@
 version = 4
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "bytes"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -115,10 +127,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lenso-contract-runtime"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "bytes",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lenso-kernel"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31faf46ab8af5434711faabce84a1bd9bddd9c97ac778e138518b35d8023d12"
+checksum = "657bb4f55cc0963cc755fc5dff98887881b2cf2418848d6e20b045e7a1b7710b"
 dependencies = [
  "futures",
  "lenso-app-plan",
@@ -130,6 +152,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "lenso-contract-codegen",
+ "lenso-contract-runtime",
  "lenso-kernel",
  "serde",
  "serde_json",
