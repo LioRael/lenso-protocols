@@ -19,13 +19,15 @@ mod tests {
             ])),
             nullable_values: Some(vec![Some("one".to_owned()), None]),
             optional_note: Some(None),
-            payload: "AQI=".to_owned(),
+            payload: Bytes::from(vec![1, 2]),
             signed: "-9223372036854775808".to_owned(),
             timestamp: "2026-08-21T12:34:56.123Z".to_owned(),
             unsigned: "18446744073709551615".to_owned(),
             values: vec![1, 2, 3],
         };
         let wire = encode_round_trip_request(&request).expect("request should encode");
+        assert!(wire.contains(r#""payload":"AQI=""#));
+        assert_eq!(request.payload.as_slice(), [1, 2]);
         assert_eq!(
             decode_round_trip_request(&wire).expect("request should decode"),
             request
@@ -133,5 +135,31 @@ mod tests {
         let error = decode_round_trip_error(r#"{"code":"future","payload":9007199254740992.5}"#)
             .expect_err("unsafe integer-valued floats must stay in the safe range");
         assert!(error.to_string().contains("unsafe number"));
+    }
+
+    #[test]
+    fn generated_profile_rejects_non_canonical_bytes() {
+        for payload in ["not base64", "AQI", "AQJ="] {
+            let wire = format!(
+                r#"{{"duration":"PT1S","name":"Ada","payload":"{payload}","signed":"0","timestamp":"2026-08-21T00:00:00Z","unsigned":"0","values":[]}}"#
+            );
+            let error = decode_round_trip_request(&wire)
+                .expect_err("bytes must use canonical padded base64 on the wire");
+            assert!(error.to_string().contains("base64"));
+        }
+    }
+
+    #[test]
+    fn generated_bytes_round_trip_all_octets_and_remainders() {
+        for length in 0..=258 {
+            let value = Bytes::from(
+                (0..length)
+                    .map(|index| u8::try_from(index % 256).unwrap())
+                    .collect::<Vec<_>>(),
+            );
+            let wire = serde_json::to_string(&value).expect("bytes should encode");
+            let decoded = serde_json::from_str::<Bytes>(&wire).expect("bytes should decode");
+            assert_eq!(decoded, value);
+        }
     }
 }
