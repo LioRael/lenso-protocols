@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/lenso-contract-codegen",
+    "crates/lenso-contract-runtime",
     "fixtures/portable-contract/rust",
 ]
 
@@ -13,6 +14,8 @@ repository = "https://github.com/LioRael/lenso-protocols"
 rust-version = "1.94"
 
 [workspace.dependencies]
+base64 = "0.22"
+bytes = "1.12"
 futures = "0.3"
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }

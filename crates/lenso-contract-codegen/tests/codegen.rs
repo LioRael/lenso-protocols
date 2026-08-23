@@ -83,6 +83,12 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(artifacts.rust.contains("NativeStreamEndpoint"));
     assert!(artifacts.rust.contains("NativeStreamHandle"));
     assert!(artifacts.rust.contains("StreamEvent"));
+    assert!(
+        artifacts
+            .rust
+            .contains("pub struct ConversationEndpoint<P: ConversationProvider>")
+    );
+    assert!(!artifacts.rust.contains("ConversationRequestEndpoint"));
     assert!(artifacts.rust.contains("fn chat("));
     assert!(artifacts.typescript.contains("StreamEvent"));
     assert!(artifacts.typescript.contains("send(message:"));
@@ -102,6 +108,12 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
     assert!(artifacts.rust.contains("NativeEventEndpoint"));
     assert!(artifacts.rust.contains("NativeEventHandle"));
     assert!(artifacts.rust.contains("EventPublishResult"));
+    assert!(
+        artifacts
+            .rust
+            .contains("pub struct NotificationsEndpoint<P: NotificationsProvider>")
+    );
+    assert!(!artifacts.rust.contains("NotificationsRequestEndpoint"));
     assert!(artifacts.rust.contains("notify: NativeEventHandle<"));
     assert!(
         artifacts
@@ -147,20 +159,24 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
             .rust
             .contains("pub const CAPABILITY_ID: &str = \"example.profile@1\";")
     );
-    assert!(artifacts.rust.contains("pub type Int64 = String;"));
-    assert!(artifacts.rust.contains("pub type Uint64 = String;"));
-    assert!(artifacts.rust.contains("pub struct Bytes(Vec<u8>);"));
-    assert!(artifacts.rust.contains("impl serde::Serialize for Bytes"));
+    assert!(artifacts.rust.contains("pub use lenso_contract_runtime::{"));
+    assert!(artifacts.rust.contains("Bytes, Duration, Int64"));
+    assert!(artifacts.rust.contains("UnknownDomainError"));
+    assert!(!artifacts.rust.contains("pub struct Bytes("));
+    assert!(!artifacts.rust.contains("fn validate_portable_json_value"));
+    assert!(artifacts.rust.contains("fn invoke_native("));
+    assert!(artifacts.rust.contains(".typed_endpoint()"));
     assert!(
         artifacts
             .rust
-            .contains("impl<'de> serde::Deserialize<'de> for Bytes")
+            .contains("struct ProfileRequestEndpoint { provider: Rc<dyn ProfileProvider> }")
     );
     assert!(
         artifacts
             .rust
-            .contains("pub type OptionalValue<T> = Option<Option<T>>;")
+            .contains("pub struct ProfileEndpoint<P: ProfileProvider>")
     );
+    assert!(artifacts.rust.contains("OptionalValue, Timestamp, Uint64"));
     assert!(artifacts.rust.contains("pub signed: Int64"));
     assert!(artifacts.rust.contains("pub enum RoundTripRequestKind"));
     assert!(artifacts.rust.contains("pub unsigned: Uint64"));
@@ -275,11 +291,18 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
 }
 
 #[test]
-fn contracts_without_bytes_keep_the_compact_rust_prelude() {
+fn contracts_without_bytes_reuse_the_contract_runtime_prelude() {
     let artifacts = generate(Path::new(EVENT_FIXTURE)).expect("event Descriptor should generate");
 
-    assert!(artifacts.rust.contains("pub type Bytes = String;"));
+    assert!(artifacts.rust.contains("pub use lenso_contract_runtime::{"));
+    assert!(artifacts.rust.contains("encode_portable_json"));
     assert!(!artifacts.rust.contains("fn decode_base64"));
+    let runtime_import = artifacts
+        .rust
+        .lines()
+        .find(|line| line.starts_with("pub use lenso_contract_runtime::"))
+        .unwrap();
+    assert!(!runtime_import.contains("Bytes"));
 }
 
 #[test]

@@ -13,6 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -24,6 +26,10 @@ jobs:
             fixtures/portable-contract/generated/profile.ts
       - name: Check workspace
         run: cargo check --locked --workspace --all-targets
+      - name: Check contract runtime portability
+        run: |
+          cargo check --locked -p lenso-contract-runtime --target wasm32-unknown-unknown
+          cargo check --locked -p lenso-contract-runtime --target wasm32-wasip2
       - name: Test workspace
         run: cargo test --locked --workspace
       - uses: oven-sh/setup-bun@v2
