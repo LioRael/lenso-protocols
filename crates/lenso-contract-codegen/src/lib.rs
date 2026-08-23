@@ -2589,6 +2589,172 @@ impl TypeScriptTypes {
     }
 }
 
+fn type_uses_bytes(value: &TypeIr) -> bool {
+    match value {
+        TypeIr::Bytes => true,
+        TypeIr::Array(items) | TypeIr::Nullable(items) => type_uses_bytes(items),
+        TypeIr::Object { fields, additional } => {
+            fields.iter().any(|field| type_uses_bytes(&field.ty))
+                || matches!(additional, ObjectAdditionalIr::Typed(value) if type_uses_bytes(value))
+        }
+        TypeIr::Any
+        | TypeIr::String
+        | TypeIr::Int64
+        | TypeIr::Uint64
+        | TypeIr::Timestamp
+        | TypeIr::Duration
+        | TypeIr::Integer
+        | TypeIr::Number
+        | TypeIr::Boolean
+        | TypeIr::Null
+        | TypeIr::Enum(_) => false,
+    }
+}
+
+fn contract_uses_bytes(contract: &ContractIr) -> bool {
+    contract.operations.iter().any(|operation| {
+        type_uses_bytes(&operation.request)
+            || type_uses_bytes(&operation.response)
+            || operation
+                .domain_errors
+                .iter()
+                .filter_map(|error| error.payload.as_ref())
+                .any(type_uses_bytes)
+    })
+}
+
+const RUST_PORTABLE_TYPES: &str = r#"
+pub type Int64 = String;
+pub type Uint64 = String;
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Bytes(Vec<u8>);
+
+impl Bytes {
+    pub fn new(value: impl Into<Vec<u8>>) -> Self { Self(value.into()) }
+    pub fn as_slice(&self) -> &[u8] { &self.0 }
+    pub fn into_vec(self) -> Vec<u8> { self.0 }
+}
+
+impl From<Vec<u8>> for Bytes {
+    fn from(value: Vec<u8>) -> Self { Self(value) }
+}
+
+impl From<&[u8]> for Bytes {
+    fn from(value: &[u8]) -> Self { Self(value.to_vec()) }
+}
+
+impl From<Bytes> for Vec<u8> {
+    fn from(value: Bytes) -> Self { value.0 }
+}
+
+impl AsRef<[u8]> for Bytes {
+    fn as_ref(&self) -> &[u8] { self.as_slice() }
+}
+
+impl std::ops::Deref for Bytes {
+    type Target = [u8];
+    fn deref(&self) -> &Self::Target { self.as_slice() }
+}
+
+impl serde::Serialize for Bytes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&encode_base64(self.as_slice()))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Bytes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let encoded = <String as serde::Deserialize>::deserialize(deserializer)?;
+        decode_base64(&encoded).map(Self).map_err(serde::de::Error::custom)
+    }
+}
+
+fn encode_base64(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut chunks = input.chunks_exact(3);
+    for chunk in &mut chunks {
+        output.push(ALPHABET[usize::from(chunk[0] >> 2)] as char);
+        output.push(ALPHABET[usize::from((chunk[0] & 0x03) << 4 | chunk[1] >> 4)] as char);
+        output.push(ALPHABET[usize::from((chunk[1] & 0x0f) << 2 | chunk[2] >> 6)] as char);
+        output.push(ALPHABET[usize::from(chunk[2] & 0x3f)] as char);
+    }
+    match chunks.remainder() {
+        [first] => {
+            output.push(ALPHABET[usize::from(first >> 2)] as char);
+            output.push(ALPHABET[usize::from((first & 0x03) << 4)] as char);
+            output.push('=');
+            output.push('=');
+        }
+        [first, second] => {
+            output.push(ALPHABET[usize::from(first >> 2)] as char);
+            output.push(ALPHABET[usize::from((first & 0x03) << 4 | second >> 4)] as char);
+            output.push(ALPHABET[usize::from((second & 0x0f) << 2)] as char);
+            output.push('=');
+        }
+        [] => {}
+        _ => unreachable!("chunks_exact remainder is shorter than three bytes"),
+    }
+    output
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, &'static str> {
+    let input = input.as_bytes();
+    if input.len() % 4 != 0 {
+        return Err("bytes must be canonical padded base64");
+    }
+    let mut output = Vec::with_capacity(input.len() / 4 * 3);
+    let chunk_count = input.len() / 4;
+    for (index, chunk) in input.chunks_exact(4).enumerate() {
+        let last = index + 1 == chunk_count;
+        let first = base64_digit(chunk[0]).ok_or("bytes contain an invalid base64 digit")?;
+        let second = base64_digit(chunk[1]).ok_or("bytes contain an invalid base64 digit")?;
+        output.push(first << 2 | second >> 4);
+        match (chunk[2], chunk[3]) {
+            (b'=', b'=') if last && second & 0x0f == 0 => {}
+            (third, b'=') if last => {
+                let third = base64_digit(third).ok_or("bytes contain an invalid base64 digit")?;
+                if third & 0x03 != 0 {
+                    return Err("bytes must be canonical padded base64");
+                }
+                output.push(second << 4 | third >> 2);
+            }
+            (third, fourth) if third != b'=' && fourth != b'=' => {
+                let third = base64_digit(third).ok_or("bytes contain an invalid base64 digit")?;
+                let fourth = base64_digit(fourth).ok_or("bytes contain an invalid base64 digit")?;
+                output.push(second << 4 | third >> 2);
+                output.push(third << 6 | fourth);
+            }
+            _ => return Err("bytes must be canonical padded base64"),
+        }
+    }
+    Ok(output)
+}
+
+fn base64_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+pub type Timestamp = String;
+pub type Duration = String;
+pub type OptionalValue<T> = Option<Option<T>>;
+
+"#;
+
 #[allow(clippy::too_many_lines)]
 fn generate_rust(contract: &ContractIr) -> String {
     let capability_name = pascal_case(
@@ -2868,7 +3034,11 @@ fn generate_rust(contract: &ContractIr) -> String {
         )
         .expect("writing to a String cannot fail");
     }
-    output.push_str("\npub type Int64 = String;\npub type Uint64 = String;\npub type Bytes = String;\npub type Timestamp = String;\npub type Duration = String;\npub type OptionalValue<T> = Option<Option<T>>;\n\n");
+    if contract_uses_bytes(contract) {
+        output.push_str(RUST_PORTABLE_TYPES);
+    } else {
+        output.push_str("\npub type Int64 = String;\npub type Uint64 = String;\npub type Bytes = String;\npub type Timestamp = String;\npub type Duration = String;\npub type OptionalValue<T> = Option<Option<T>>;\n\n");
+    }
     output.push_str("#[allow(dead_code)]\nfn deserialize_required<'de, D, T>(deserializer: D) -> Result<T, D::Error>\nwhere\n    D: serde::Deserializer<'de>,\n    T: serde::Deserialize<'de>,\n{\n    <T as serde::Deserialize>::deserialize(deserializer)\n}\n\n#[allow(dead_code, clippy::option_option)]\nfn deserialize_optional_value<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>\nwhere\n    D: serde::Deserializer<'de>,\n    T: serde::Deserialize<'de>,\n{\n    Ok(Some(<Option<T> as serde::Deserialize>::deserialize(deserializer)?))\n}\n\n#[allow(dead_code)]\nfn validate_portable_json_value(value: &serde_json::Value) -> Result<(), String> {\n    match value {\n        serde_json::Value::Number(number) => {\n            let safe = number.as_i64().is_some_and(|value| (-9_007_199_254_740_991..=9_007_199_254_740_991).contains(&value))\n                || number.as_u64().is_some_and(|value| value <= 9_007_199_254_740_991)\n                || (number.is_f64() && number.as_f64().is_some_and(|value| value.is_finite() && (value.abs() <= 9_007_199_254_740_991.0 || value.fract() != 0.0)));\n            if !safe {\n                return Err(\"wire JSON contains an unsafe number\".to_owned());\n            }\n        }\n        serde_json::Value::Array(values) => {\n            for value in values {\n                validate_portable_json_value(value)?;\n            }\n        }\n        serde_json::Value::Object(values) => {\n            for value in values.values() {\n                validate_portable_json_value(value)?;\n            }\n        }\n        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::String(_) => {}\n    }\n    Ok(())\n}\n\n#[allow(dead_code)]\nfn portable_json_error(detail: String) -> serde_json::Error {\n    serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, detail))\n}\n\n#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]\npub struct UnknownDomainError {\n    pub code: String,\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub payload: Option<serde_json::Value>,\n    #[serde(default, flatten)]\n    pub extra: std::collections::BTreeMap<String, serde_json::Value>,\n}\n\n");
     for declaration in types.declarations {
         output.push_str(&declaration);

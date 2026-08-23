@@ -149,7 +149,13 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     );
     assert!(artifacts.rust.contains("pub type Int64 = String;"));
     assert!(artifacts.rust.contains("pub type Uint64 = String;"));
-    assert!(artifacts.rust.contains("pub type Bytes = String;"));
+    assert!(artifacts.rust.contains("pub struct Bytes(Vec<u8>);"));
+    assert!(artifacts.rust.contains("impl serde::Serialize for Bytes"));
+    assert!(
+        artifacts
+            .rust
+            .contains("impl<'de> serde::Deserialize<'de> for Bytes")
+    );
     assert!(
         artifacts
             .rust
@@ -266,6 +272,14 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
             .typescript
             .contains("readonly code: \"optional_data\"; readonly payload?: string | null")
     );
+}
+
+#[test]
+fn contracts_without_bytes_keep_the_compact_rust_prelude() {
+    let artifacts = generate(Path::new(EVENT_FIXTURE)).expect("event Descriptor should generate");
+
+    assert!(artifacts.rust.contains("pub type Bytes = String;"));
+    assert!(!artifacts.rust.contains("fn decode_base64"));
 }
 
 #[test]
