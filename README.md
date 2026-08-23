@@ -14,6 +14,9 @@ retain their relevant Git history.
   runtime-neutral Capability descriptor.
 - `lenso-contract-runtime`: provides the small, platform-neutral wire primitive,
   serde, and portable JSON surface shared by generated Rust bindings.
+- `@lenso/contract-runtime`: provides the matching dependency-free TypeScript
+  wire types, portable JSON behavior, and forward-compatible Domain Error
+  decoding as an npm package.
 - `fixtures/portable-contract`: cross-language value-profile conformance data.
 
 Generated bindings retain contract-specific values, Provider traits, Clients,
@@ -33,5 +36,10 @@ only as the compatibility boundary. This Provider signature starts with
 cargo fmt --all -- --check
 cargo check --locked --workspace --all-targets
 cargo test --locked --workspace
-bun test fixtures/portable-contract/conformance.test.ts
+bun install --frozen-lockfile
+bun run build
+bun run typecheck
+bun run package-smoke
+bun run test
+npm pack --dry-run ./packages/lenso-contract-runtime
 ```

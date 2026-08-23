@@ -3149,24 +3149,21 @@ fn generate_typescript_codecs(
     variants: &[ErrorVariantIr],
 ) -> String {
     let stem = pascal_case(operation);
-    let mut known_strings = String::new();
-    for variant in variants.iter().filter(|variant| !variant.structured) {
-        writeln!(
-            known_strings,
-            "    if (value === {}) return value as {error_type};",
-            quote_string(&variant.code)
-        )
-        .expect("String cannot fail");
-    }
+    let known_strings = variants
+        .iter()
+        .filter(|variant| !variant.structured)
+        .map(|variant| quote_string(&variant.code))
+        .collect::<Vec<_>>()
+        .join(", ");
     format!(
-        "export function encode{stem}Request(value: {request_type}): string {{ validatePortableJson(value); const wire = JSON.stringify(value); if (wire === undefined) throw new Error(\"request cannot be encoded\"); return wire; }}\nexport function decode{stem}Request(wire: string): {request_type} {{ const value: unknown = JSON.parse(wire); validatePortableJson(value); return value as {request_type}; }}\nexport function encode{stem}Response(value: {response_type}): string {{ validatePortableJson(value); const wire = JSON.stringify(value); if (wire === undefined) throw new Error(\"response cannot be encoded\"); return wire; }}\nexport function decode{stem}Response(wire: string): {response_type} {{ const value: unknown = JSON.parse(wire); validatePortableJson(value); return value as {response_type}; }}\nexport function encode{stem}Error(value: {error_type}): string {{ validatePortableJson(value); const wire = JSON.stringify(value); if (wire === undefined) throw new Error(\"Domain Error cannot be encoded\"); return wire; }}\nexport function decode{stem}Error(wire: string): {error_type} {{\n  const value: unknown = JSON.parse(wire);\n  validatePortableJson(value);\n  if (typeof value === \"string\") {{\n{known_strings}    return {{ code: value }} as {error_type};\n  }}\n  if (isRecord(value) && typeof value.code === \"string\") return value as {error_type};\n  throw new Error(\"Domain Error must be a string or object\");\n}}\n"
+        "export function encode{stem}Request(value: {request_type}): string {{ return lensoContractRuntime.encodePortableJson(value, \"request\"); }}\nexport function decode{stem}Request(wire: string): {request_type} {{ return lensoContractRuntime.decodePortableJson<{request_type}>(wire); }}\nexport function encode{stem}Response(value: {response_type}): string {{ return lensoContractRuntime.encodePortableJson(value, \"response\"); }}\nexport function decode{stem}Response(wire: string): {response_type} {{ return lensoContractRuntime.decodePortableJson<{response_type}>(wire); }}\nexport function encode{stem}Error(value: {error_type}): string {{ return lensoContractRuntime.encodePortableJson(value, \"Domain Error\"); }}\nexport function decode{stem}Error(wire: string): {error_type} {{ return lensoContractRuntime.decodeDomainError<{error_type}>(wire, [{known_strings}]); }}\n"
     )
 }
 
 fn generate_typescript_event_codecs(operation: &str, event_type: &str) -> String {
     let stem = pascal_case(operation);
     format!(
-        "export function encode{stem}Event(value: {event_type}): string {{ validatePortableJson(value); const wire = JSON.stringify(value); if (wire === undefined) throw new Error(\"event cannot be encoded\"); return wire; }}\nexport function decode{stem}Event(wire: string): {event_type} {{ const value: unknown = JSON.parse(wire); validatePortableJson(value); return value as {event_type}; }}\n"
+        "export function encode{stem}Event(value: {event_type}): string {{ return lensoContractRuntime.encodePortableJson(value, \"event\"); }}\nexport function decode{stem}Event(wire: string): {event_type} {{ return lensoContractRuntime.decodePortableJson<{event_type}>(wire); }}\n"
     )
 }
 
@@ -3278,6 +3275,7 @@ fn generate_typescript(contract: &ContractIr) -> String {
     }
     let mut output = String::new();
     output.push_str(TYPESCRIPT_HEADER);
+    output.push_str("import * as lensoContractRuntime from \"@lenso/contract-runtime\";\n\n");
     writeln!(
         output,
         "export const CAPABILITY_ID = {};",
@@ -3298,9 +3296,9 @@ fn generate_typescript(contract: &ContractIr) -> String {
         contract.cross_lane_transfer
     )
     .expect("writing to a String cannot fail");
-    output.push_str("export type Int64 = string & { readonly __lensoInt64: unique symbol };\nexport type Uint64 = string & { readonly __lensoUint64: unique symbol };\nexport type Bytes = string & { readonly __lensoBytes: unique symbol };\nexport type Timestamp = string & { readonly __lensoTimestamp: unique symbol };\nexport type Duration = string & { readonly __lensoDuration: unique symbol };\nexport type OptionalValue<T> = T | null | undefined;\n\nexport interface InvocationContext {\n  readonly requestId: Uint64;\n  readonly deadline?: Duration;\n  readonly cancelled: boolean;\n  readonly callerInstance?: string;\n  readonly extensions?: Record<string, unknown>;\n}\n\nexport type RuntimeFailure = { readonly kind: \"unavailable\" | \"unknown_operation\" | \"ambiguous_binding\" | \"protocol_violation\" | \"missing_module_factory\" | \"unavailable_execution_class\" | \"invalid_resolved_plan\" | \"admission_closed\" | \"resource_exhausted\" | \"deadline_exceeded\" | \"cancelled\" | \"internal\" | \"module_failure\" | \"module_restart_exhausted\"; readonly detail?: unknown; readonly [key: string]: unknown };\nexport type UnknownDomainError = { readonly code: string; readonly payload?: unknown; readonly [key: string]: unknown };\n\nexport type StreamEvent<Message, DomainError> =\n  | { readonly kind: \"message\"; readonly message: Message }\n  | { readonly kind: \"peer_half_closed\" }\n  | { readonly kind: \"terminal\"; readonly outcome: { readonly ok: true } | { readonly ok: false; readonly error: DomainError } };\nexport interface StreamSession<Message, DomainError> {\n  send(message: Message): Promise<void>;\n  receive(): Promise<StreamEvent<Message, DomainError>>;\n  closeSend(): Promise<void>;\n  cancel(): void;\n}\n\n");
+    output.push_str("export type Int64 = lensoContractRuntime.Int64;\nexport type Uint64 = lensoContractRuntime.Uint64;\nexport type Bytes = lensoContractRuntime.Bytes;\nexport type Timestamp = lensoContractRuntime.Timestamp;\nexport type Duration = lensoContractRuntime.Duration;\nexport type OptionalValue<T> = lensoContractRuntime.OptionalValue<T>;\nexport type InvocationContext = lensoContractRuntime.InvocationContext;\nexport type RuntimeFailure = lensoContractRuntime.RuntimeFailure;\nexport type UnknownDomainError = lensoContractRuntime.UnknownDomainError;\nexport type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;\nexport type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;\n\n");
     if has_event_operations {
-        output.push_str("export type EventAdmission = \"accepted\" | \"unavailable\" | \"exhausted\";\nexport interface EventPublishResult {\n  readonly subscriberInstance: string;\n  readonly admission: EventAdmission;\n}\n\n");
+        output.push_str("export type EventAdmission = lensoContractRuntime.EventAdmission;\nexport type EventPublishResult = lensoContractRuntime.EventPublishResult;\n\n");
     }
     for declaration in types.declarations {
         output.push_str(&declaration);
@@ -3310,7 +3308,6 @@ fn generate_typescript(contract: &ContractIr) -> String {
         output.push_str(&error);
         output.push('\n');
     }
-    output.push_str("function isRecord(value: unknown): value is Record<string, unknown> {\n  return typeof value === \"object\" && value !== null;\n}\n\nfunction validatePortableJson(value: unknown): void {\n  if (typeof value === \"number\") {\n    if (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value))) throw new Error(\"wire JSON contains an unsafe number\");\n    return;\n  }\n  if (Array.isArray(value)) {\n    for (const item of value) validatePortableJson(item);\n    return;\n  }\n  if (isRecord(value)) {\n    for (const item of Object.values(value)) validatePortableJson(item);\n  }\n}\n\n");
     for codec in codecs {
         output.push_str(&codec);
         output.push('\n');
@@ -3322,6 +3319,8 @@ fn generate_typescript(contract: &ContractIr) -> String {
         providers.join("\n")
     )
     .expect("writing to a String cannot fail");
-    output.push_str("\nexport const portableValueProfile = {\n  int64: \"decimal-string\",\n  uint64: \"decimal-string\",\n  bytes: \"base64-string\",\n  timestamp: \"RFC3339-string\",\n  duration: \"ISO8601-string\",\n  missingAndNull: \"distinct\",\n} as const;\n");
+    output.push_str(
+        "\nexport const portableValueProfile = lensoContractRuntime.portableValueProfile;\n",
+    );
     output
 }
