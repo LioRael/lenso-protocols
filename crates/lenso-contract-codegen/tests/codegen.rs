@@ -169,6 +169,16 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
+            .contains("invoke_typed_or_erased_native_request::<Self>")
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("-> NativeRequestFuture<ProfileRoundTrip>;")
+    );
+    assert!(
+        artifacts
+            .rust
             .contains("struct ProfileRequestEndpoint { provider: Rc<dyn ProfileProvider> }")
     );
     assert!(

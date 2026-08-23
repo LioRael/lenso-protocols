@@ -21,6 +21,12 @@ Endpoints, and operation dispatch. The runtime owns only reusable wire behavior;
 patch and minor runtime releases must preserve that behavior, with conformance
 tests and generated artifact drift checks guarding both sides of the boundary.
 
+Rust request Providers return `NativeRequestFuture<Operation>` directly. The
+generated Endpoint preserves the typed domain/runtime result without wrapping
+the Provider future in a second allocation; erased dispatch remains available
+only as the compatibility boundary. This Provider signature starts with
+`lenso-contract-codegen` 0.4 and requires `lenso-kernel` 0.1.4 or newer.
+
 ## Validation
 
 ```sh

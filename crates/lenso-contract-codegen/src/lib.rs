@@ -2680,14 +2680,9 @@ fn generate_rust(contract: &ContractIr) -> String {
         let operation_const = screaming_snake_case(&operation.name);
         operation_markers.push(match operation.interaction.as_str() {
             "request" => {
-                let invocation_error_name = if contract.operations.len() == 1 {
-                    format!("{capability_name}InvocationError")
-                } else {
-                    format!("{capability_name}{operation_name}InvocationError")
-                };
                 let provider_method = rust_field_name(&operation.name);
                 format!(
-            "#[derive(Debug)]\npub struct {marker_name};\nimpl RequestCapability for {marker_name} {{\n    type Request = {request_type};\n    type Response = {response_type};\n    type DomainError = {error_name};\n    const ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn invoke_native(endpoint: &dyn NativeRequestEndpoint, operation: &str, request: Self::Request, context: InvocationContext) -> NativeRequestFuture<Self> {{\n        if operation != {operation_const}_OPERATION {{\n            return lenso_kernel::invoke_erased_native_request::<Self>(endpoint, operation, request, context);\n        }}\n        let Some(typed_endpoint) = endpoint\n            .typed_endpoint()\n            .and_then(|endpoint| endpoint.downcast_ref::<{capability_name}RequestEndpoint>())\n        else {{\n            return lenso_kernel::invoke_erased_native_request::<Self>(endpoint, operation, request, context);\n        }};\n        let provider = Rc::clone(&typed_endpoint.provider);\n        Box::pin(async move {{\n            match provider.{provider_method}(context, request).await {{\n                Ok(value) => Ok(Ok(value)),\n                Err({invocation_error_name}::Domain(error)) => Ok(Err(error)),\n                Err({invocation_error_name}::Runtime(error)) => Err(error),\n            }}\n        }})\n    }}\n}}\n"
+            "#[derive(Debug)]\npub struct {marker_name};\nimpl RequestCapability for {marker_name} {{\n    type Request = {request_type};\n    type Response = {response_type};\n    type DomainError = {error_name};\n    const ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn invoke_native(endpoint: &dyn NativeRequestEndpoint, operation: &str, request: Self::Request, context: InvocationContext) -> NativeRequestFuture<Self> {{\n        if operation != {operation_const}_OPERATION {{\n            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);\n        }}\n        let Some(typed_endpoint) = endpoint\n            .typed_endpoint()\n            .and_then(|endpoint| endpoint.downcast_ref::<{capability_name}RequestEndpoint>())\n        else {{\n            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);\n        }};\n        Rc::clone(&typed_endpoint.provider).{provider_method}(context, request)\n    }}\n}}\n"
                 )
             }
             "stream" => format!(
@@ -2706,11 +2701,11 @@ fn generate_rust(contract: &ContractIr) -> String {
             };
             operation_rows.push(format!("        {operation_const}_OPERATION,\n"));
             provider_methods.push(format!(
-                "    fn {}(&self, context: InvocationContext, request: {request_type}) -> LocalBoxFuture<'static, Result<{response_type}, {invocation_error_name}>>;",
-                rust_field_name(&operation.name)
+                "    fn {}(&self, context: InvocationContext, request: {request_type}) -> NativeRequestFuture<{marker_name}>;",
+                rust_field_name(&operation.name),
             ));
             endpoint_arms.push(format!(
-                "            {operation_const}_OPERATION => {{\n                let Ok(request) = request.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let provider = Rc::clone(&self.provider);\n                Box::pin(async move {{\n                    match provider.{}(context, *request).await {{\n                        Ok(value) => Ok(Ok(Box::new(value) as Box<dyn std::any::Any>)),\n                        Err({invocation_error_name}::Domain(error)) => Ok(Err(Box::new(error) as Box<dyn std::any::Any>)),\n                        Err({invocation_error_name}::Runtime(error)) => Err(error),\n                    }}\n                }})\n            }}",
+                "            {operation_const}_OPERATION => {{\n                let Ok(request) = request.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let invocation = Rc::clone(&self.provider).{}(context, *request);\n                Box::pin(async move {{\n                    invocation.await.map(|result| {{\n                        result\n                            .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                            .map_err(|error| Box::new(error) as Box<dyn std::any::Any>)\n                    }})\n                }})\n            }}",
                 rust_field_name(&operation.name),
             ));
             let field = rust_field_name(&operation.name);
