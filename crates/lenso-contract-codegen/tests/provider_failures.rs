@@ -10,17 +10,17 @@ fn request_providers_preserve_domain_and_runtime_failures() {
     assert!(
         artifacts
             .rust
-            .contains("Result<RoundTripResponse, ProfileRoundTripInvocationError>")
-    );
-    assert!(
-        artifacts.rust.contains(
-            "Err(ProfileRoundTripInvocationError::Domain(error)) => Ok(Err(Box::new(error)"
-        )
+            .contains("NativeRequestFuture<ProfileRoundTrip>")
     );
     assert!(
         artifacts
             .rust
-            .contains("Err(ProfileRoundTripInvocationError::Runtime(error)) => Err(error)")
+            .contains(".map_err(|error| Box::new(error) as Box<dyn std::any::Any>)")
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("Rc::clone(&typed_endpoint.provider).round_trip(context, request)")
     );
     assert!(artifacts.typescript.contains(
         "round_trip(context: InvocationContext, request: RoundTripRequest): Promise<RoundTripResult>;"

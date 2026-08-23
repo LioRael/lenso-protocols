@@ -133,22 +133,15 @@ impl RequestCapability for ProfileCorpusRoundTrip {
 
     fn invoke_native(endpoint: &dyn NativeRequestEndpoint, operation: &str, request: Self::Request, context: InvocationContext) -> NativeRequestFuture<Self> {
         if operation != CORPUS_ROUND_TRIP_OPERATION {
-            return lenso_kernel::invoke_erased_native_request::<Self>(endpoint, operation, request, context);
+            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
         }
         let Some(typed_endpoint) = endpoint
             .typed_endpoint()
             .and_then(|endpoint| endpoint.downcast_ref::<ProfileRequestEndpoint>())
         else {
-            return lenso_kernel::invoke_erased_native_request::<Self>(endpoint, operation, request, context);
+            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
         };
-        let provider = Rc::clone(&typed_endpoint.provider);
-        Box::pin(async move {
-            match provider.corpus_round_trip(context, request).await {
-                Ok(value) => Ok(Ok(value)),
-                Err(ProfileCorpusRoundTripInvocationError::Domain(error)) => Ok(Err(error)),
-                Err(ProfileCorpusRoundTripInvocationError::Runtime(error)) => Err(error),
-            }
-        })
+        Rc::clone(&typed_endpoint.provider).corpus_round_trip(context, request)
     }
 }
 
@@ -163,22 +156,15 @@ impl RequestCapability for ProfileRoundTrip {
 
     fn invoke_native(endpoint: &dyn NativeRequestEndpoint, operation: &str, request: Self::Request, context: InvocationContext) -> NativeRequestFuture<Self> {
         if operation != ROUND_TRIP_OPERATION {
-            return lenso_kernel::invoke_erased_native_request::<Self>(endpoint, operation, request, context);
+            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
         }
         let Some(typed_endpoint) = endpoint
             .typed_endpoint()
             .and_then(|endpoint| endpoint.downcast_ref::<ProfileRequestEndpoint>())
         else {
-            return lenso_kernel::invoke_erased_native_request::<Self>(endpoint, operation, request, context);
+            return lenso_kernel::invoke_typed_or_erased_native_request::<Self>(endpoint, operation, request, context);
         };
-        let provider = Rc::clone(&typed_endpoint.provider);
-        Box::pin(async move {
-            match provider.round_trip(context, request).await {
-                Ok(value) => Ok(Ok(value)),
-                Err(ProfileRoundTripInvocationError::Domain(error)) => Ok(Err(error)),
-                Err(ProfileRoundTripInvocationError::Runtime(error)) => Err(error),
-            }
-        })
+        Rc::clone(&typed_endpoint.provider).round_trip(context, request)
     }
 }
 
@@ -351,8 +337,8 @@ pub fn encode_round_trip_error(value: &RoundTripError) -> Result<String, serde_j
 pub fn decode_round_trip_error(wire: &str) -> Result<RoundTripError, serde_json::Error> { decode_portable_json(wire) }
 
 pub trait ProfileProvider: fmt::Debug + 'static {
-    fn corpus_round_trip(&self, context: InvocationContext, request: CorpusRoundTripRequest) -> LocalBoxFuture<'static, Result<CorpusRoundTripResponse, ProfileCorpusRoundTripInvocationError>>;
-    fn round_trip(&self, context: InvocationContext, request: RoundTripRequest) -> LocalBoxFuture<'static, Result<RoundTripResponse, ProfileRoundTripInvocationError>>;
+    fn corpus_round_trip(&self, context: InvocationContext, request: CorpusRoundTripRequest) -> NativeRequestFuture<ProfileCorpusRoundTrip>;
+    fn round_trip(&self, context: InvocationContext, request: RoundTripRequest) -> NativeRequestFuture<ProfileRoundTrip>;
 }
 
 #[derive(Debug)]
@@ -382,26 +368,26 @@ impl<P: ProfileProvider> NativeRequestEndpoint for ProfileEndpoint<P> {
                 let Ok(request) = request.downcast::<CorpusRoundTripRequest>() else {
                     return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation { capability: CAPABILITY_ID })));
                 };
-                let provider = Rc::clone(&self.provider);
+                let invocation = Rc::clone(&self.provider).corpus_round_trip(context, *request);
                 Box::pin(async move {
-                    match provider.corpus_round_trip(context, *request).await {
-                        Ok(value) => Ok(Ok(Box::new(value) as Box<dyn std::any::Any>)),
-                        Err(ProfileCorpusRoundTripInvocationError::Domain(error)) => Ok(Err(Box::new(error) as Box<dyn std::any::Any>)),
-                        Err(ProfileCorpusRoundTripInvocationError::Runtime(error)) => Err(error),
-                    }
+                    invocation.await.map(|result| {
+                        result
+                            .map(|value| Box::new(value) as Box<dyn std::any::Any>)
+                            .map_err(|error| Box::new(error) as Box<dyn std::any::Any>)
+                    })
                 })
             },
             ROUND_TRIP_OPERATION => {
                 let Ok(request) = request.downcast::<RoundTripRequest>() else {
                     return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation { capability: CAPABILITY_ID })));
                 };
-                let provider = Rc::clone(&self.provider);
+                let invocation = Rc::clone(&self.provider).round_trip(context, *request);
                 Box::pin(async move {
-                    match provider.round_trip(context, *request).await {
-                        Ok(value) => Ok(Ok(Box::new(value) as Box<dyn std::any::Any>)),
-                        Err(ProfileRoundTripInvocationError::Domain(error)) => Ok(Err(Box::new(error) as Box<dyn std::any::Any>)),
-                        Err(ProfileRoundTripInvocationError::Runtime(error)) => Err(error),
-                    }
+                    invocation.await.map(|result| {
+                        result
+                            .map(|value| Box::new(value) as Box<dyn std::any::Any>)
+                            .map_err(|error| Box::new(error) as Box<dyn std::any::Any>)
+                    })
                 })
             }
             _ => Box::pin(futures::future::ready(Err(RuntimeFailure::UnknownOperation { capability: CAPABILITY_ID, operation: operation.to_owned() }))),
