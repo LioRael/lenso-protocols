@@ -25,7 +25,9 @@ jobs:
         with:
           node-version: 24
       - name: Verify release tag
-        run: test "$GITHUB_REF_NAME" = "lenso-contract-runtime-ts-v$(node -p 'require(\"./packages/lenso-contract-runtime/package.json\").version')"
+        run: |
+          package_version="$(node -p "require('./packages/lenso-contract-runtime/package.json').version")"
+          test "$GITHUB_REF_NAME" = "lenso-contract-runtime-ts-v${package_version}"
       - name: Install workspace
         run: bun install --frozen-lockfile
       - name: Verify package
