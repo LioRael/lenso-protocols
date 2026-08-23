@@ -1,0 +1,22 @@
+{
+  "name": "lenso-protocols-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.2.21",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "bun run --filter '@lenso/contract-runtime' build",
+    "package-smoke": "bun run --filter '@lenso/contract-runtime' smoke",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "bun test packages/lenso-contract-runtime/test fixtures/portable-contract/conformance.test.ts"
+  },
+  "dependencies": {
+    "@lenso/contract-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "typescript": "7.0.2"
+  }
+}

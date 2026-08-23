@@ -1,0 +1,39 @@
+name: Release npm package
+
+on:
+  push:
+    tags:
+      - "lenso-contract-runtime-ts-v*"
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish @lenso/contract-runtime
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.21
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Verify release tag
+        run: test "$GITHUB_REF_NAME" = "lenso-contract-runtime-ts-v$(node -p 'require(\"./packages/lenso-contract-runtime/package.json\").version')"
+      - name: Install workspace
+        run: bun install --frozen-lockfile
+      - name: Verify package
+        run: |
+          bun run build
+          bun run typecheck
+          bun run package-smoke
+          bun run test
+          npm pack --dry-run ./packages/lenso-contract-runtime
+      - name: Publish package
+        run: npm publish ./packages/lenso-contract-runtime --access public --provenance

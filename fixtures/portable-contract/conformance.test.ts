@@ -10,6 +10,7 @@ import {
   encodeRoundTripRequest,
   encodeRoundTripResponse,
   portableValueProfile,
+  type RoundTripRequest,
 } from "./generated/profile.ts";
 import { expect, test } from "bun:test";
 
@@ -65,7 +66,7 @@ test("generated TypeScript profile round-trips the shared corpus", () => {
     timestamp: "2026-08-21T12:34:56.123Z",
     unsigned: "18446744073709551615",
     values: [1, 2, 3],
-  };
+  } as unknown as RoundTripRequest;
   expect(decodeRoundTripRequest(encodeRoundTripRequest(profileRequest))).toEqual(
     profileRequest,
   );

@@ -35,5 +35,15 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.2.21
-      - name: Test TypeScript conformance
-        run: bun test fixtures/portable-contract/conformance.test.ts
+      - name: Install TypeScript workspace
+        run: bun install --frozen-lockfile
+      - name: Build TypeScript runtime
+        run: bun run build
+      - name: Check TypeScript
+        run: bun run typecheck
+      - name: Smoke npm exports
+        run: bun run package-smoke
+      - name: Test TypeScript runtime and conformance
+        run: bun run test
+      - name: Check npm package contents
+        run: npm pack --dry-run ./packages/lenso-contract-runtime

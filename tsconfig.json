@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "exactOptionalPropertyTypes": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": ["bun"]
+  },
+  "include": [
+    "fixtures/portable-contract/**/*.ts",
+    "packages/lenso-contract-runtime/src/**/*.ts",
+    "packages/lenso-contract-runtime/test/**/*.ts"
+  ]
+}
