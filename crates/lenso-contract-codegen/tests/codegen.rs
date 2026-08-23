@@ -285,6 +285,32 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .typescript
+            .contains("export function bindProfileProvider(")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("export type Provider = ProfileProvider;")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("export const bindProvider = bindProfileProvider;")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("async invokeRequest(operation, context, payload)")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("operations: [\"corpus_round_trip\", \"round_trip\"]")
+    );
+    assert!(artifacts.typescript.contains("case \"round_trip\":"));
+    assert!(
+        artifacts
+            .typescript
             .contains("readonly payload: RoundTripErrorRateLimitedPayload")
     );
     assert!(

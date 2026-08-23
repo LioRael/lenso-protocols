@@ -30,6 +30,13 @@ the Provider future in a second allocation; erased dispatch remains available
 only as the compatibility boundary. This Provider signature starts with
 `lenso-contract-codegen` 0.4 and requires `lenso-kernel` 0.1.4 or newer.
 
+TypeScript bindings also expose a typed Provider interface and a generated
+request dispatcher. Runtime packages consume the runtime-neutral
+`CapabilityProviderBinding`; Module authors implement only their generated
+`Provider` alias and register it with `bindProvider`. Decoding, encoding,
+Domain Error preservation, unknown Operations, and thrown Module failures stay
+inside generated contract code instead of leaking into a Bun or Node runtime.
+
 ## Validation
 
 ```sh
