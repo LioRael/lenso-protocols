@@ -1,4 +1,5 @@
 import {
+  bindProvider,
   decodeCorpusRoundTripRequest,
   decodeCorpusRoundTripResponse,
   decodeRoundTripError,
@@ -10,6 +11,8 @@ import {
   encodeRoundTripRequest,
   encodeRoundTripResponse,
   portableValueProfile,
+  type InvocationContext,
+  type Provider,
   type RoundTripRequest,
 } from "./generated/profile.ts";
 import { expect, test } from "bun:test";
@@ -100,4 +103,60 @@ test("generated TypeScript profile round-trips the shared corpus", () => {
       '{"code":"future","payload":9007199254740992.5}',
     ),
   ).toThrow("unsafe number");
+});
+
+test("generated provider binding dispatches typed request outcomes", async () => {
+  const provider: Provider = {
+    async corpus_round_trip(_context, request) {
+      return { ok: true, value: request };
+    },
+    async round_trip(_context, request) {
+      if (request.name.length === 0) {
+        return {
+          ok: false,
+          error: { kind: "domain", error: "rejected" },
+        };
+      }
+      return {
+        ok: true,
+        value:
+          request.optional_note === undefined
+            ? { accepted: true }
+            : { accepted: true, echo: request.optional_note },
+      };
+    },
+  };
+  const binding = bindProvider(provider);
+  const context = {
+    requestId: "7",
+    cancelled: false,
+  } as InvocationContext;
+  const request = {
+    duration: "PT1.5S",
+    name: "Ada",
+    payload: "AQI=",
+    signed: "-1",
+    timestamp: "2026-08-21T12:34:56Z",
+    unsigned: "1",
+    values: [1],
+  } as unknown as RoundTripRequest;
+
+  expect(binding.descriptor).toEqual({
+    capability_id: "example.profile@1",
+    descriptor_version: "1.0.0",
+    operations: ["corpus_round_trip", "round_trip"],
+    stream_operations: [],
+    event_operations: [],
+  });
+  expect(await binding.invokeRequest("round_trip", context, request)).toEqual({
+    kind: "success",
+    value: { accepted: true },
+  });
+  expect(
+    await binding.invokeRequest("round_trip", context, { ...request, name: "" }),
+  ).toEqual({ kind: "domain", value: "rejected" });
+  expect(await binding.invokeRequest("missing", context, request)).toEqual({
+    kind: "runtime",
+    failure: { kind: "unknown_operation", operation: "missing" },
+  });
 });

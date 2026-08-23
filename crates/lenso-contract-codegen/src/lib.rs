@@ -3182,6 +3182,27 @@ fn generate_typescript(contract: &ContractIr) -> String {
     let mut providers = Vec::new();
     let mut errors = Vec::new();
     let mut codecs = Vec::new();
+    let mut request_dispatch_arms = Vec::new();
+    let operation_names = contract
+        .operations
+        .iter()
+        .map(|operation| quote_string(&operation.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let stream_operation_names = contract
+        .operations
+        .iter()
+        .filter(|operation| operation.interaction == "stream")
+        .map(|operation| quote_string(&operation.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let event_operation_names = contract
+        .operations
+        .iter()
+        .filter(|operation| operation.interaction == "event")
+        .map(|operation| quote_string(&operation.name))
+        .collect::<Vec<_>>()
+        .join(", ");
     let has_event_operations = contract
         .operations
         .iter()
@@ -3272,6 +3293,13 @@ fn generate_typescript(contract: &ContractIr) -> String {
                 typescript_property_name(&snake_case(&operation.name)),
             ));
         }
+        if operation.interaction == "request" {
+            let provider_method = typescript_property_name(&snake_case(&operation.name));
+            request_dispatch_arms.push(format!(
+                "      case {}: {{\n        let request: {request_type};\n        try {{\n          request = decode{operation_name}Request(lensoContractRuntime.encodePortableJson(payload, \"request\"));\n        }} catch (error) {{\n          return {{ kind: \"runtime\", failure: {{ kind: \"protocol_violation\", detail: providerErrorMessage(error) }} }};\n        }}\n        try {{\n          const result = await provider.{provider_method}(context, request);\n          if (result.ok) {{\n            return {{ kind: \"success\", value: JSON.parse(encode{operation_name}Response(result.value)) as unknown }};\n          }}\n          if (result.error.kind === \"domain\") {{\n            return {{ kind: \"domain\", value: JSON.parse(encode{operation_name}Error(result.error.error)) as unknown }};\n          }}\n          return {{ kind: \"runtime\", failure: result.error.error }};\n        }} catch (error) {{\n          return {{ kind: \"runtime\", failure: {{ kind: \"module_failure\", detail: providerErrorMessage(error) }} }};\n        }}\n      }}",
+                quote_string(&operation.name),
+            ));
+        }
     }
     let mut output = String::new();
     output.push_str(TYPESCRIPT_HEADER);
@@ -3317,6 +3345,12 @@ fn generate_typescript(contract: &ContractIr) -> String {
         "\nexport interface {capability_name}Client {{\n{}\n}}\n\nexport interface {capability_name}Provider {{\n{}\n}}\n",
         clients.join("\n"),
         providers.join("\n")
+    )
+    .expect("writing to a String cannot fail");
+    write!(
+        output,
+        "\nexport type ProviderDispatchOutcome =\n  | {{ readonly kind: \"success\"; readonly value: unknown }}\n  | {{ readonly kind: \"domain\"; readonly value: unknown }}\n  | {{ readonly kind: \"runtime\"; readonly failure: RuntimeFailure }};\n\nexport interface CapabilityProviderDescriptor {{\n  readonly capability_id: string;\n  readonly descriptor_version: string;\n  readonly operations: ReadonlyArray<string>;\n  readonly stream_operations: ReadonlyArray<string>;\n  readonly event_operations: ReadonlyArray<string>;\n}}\n\nexport interface CapabilityProviderBinding {{\n  readonly descriptor: CapabilityProviderDescriptor;\n  invokeRequest(\n    operation: string,\n    context: InvocationContext,\n    payload: unknown,\n  ): Promise<ProviderDispatchOutcome>;\n}}\n\nfunction providerErrorMessage(error: unknown): string {{\n  return error instanceof Error ? error.message : String(error);\n}}\n\nexport function bind{capability_name}Provider(\n  provider: {capability_name}Provider,\n): CapabilityProviderBinding {{\n  return {{\n    descriptor: {{\n      capability_id: CAPABILITY_ID,\n      descriptor_version: DESCRIPTOR_VERSION,\n      operations: [{operation_names}],\n      stream_operations: [{stream_operation_names}],\n      event_operations: [{event_operation_names}],\n    }},\n    async invokeRequest(operation, context, payload) {{\n      switch (operation) {{\n{}\n        default:\n          return {{ kind: \"runtime\", failure: {{ kind: \"unknown_operation\", operation }} }};\n      }}\n    }},\n  }};\n}}\n\nexport type Provider = {capability_name}Provider;\nexport const bindProvider = bind{capability_name}Provider;\n",
+        request_dispatch_arms.join("\n")
     )
     .expect("writing to a String cannot fail");
     output.push_str(
