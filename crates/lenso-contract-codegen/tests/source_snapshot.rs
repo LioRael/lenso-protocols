@@ -57,3 +57,23 @@ fn source_snapshots_are_deterministic_and_drift_checked() {
     ));
     assert!(Path::new(&descriptor).exists());
 }
+
+#[test]
+fn stream_source_snapshots_use_open_and_message_artifacts() {
+    let root = tempfile::tempdir().unwrap();
+    let descriptor = root.path().join("capability.json");
+    let mut snapshot = snapshot();
+    snapshot.operations[0].interaction = "stream".to_owned();
+
+    write_source_snapshot(&snapshot, &descriptor).unwrap();
+    assert!(root.path().join("schemas/run-open.schema.json").is_file());
+    assert!(
+        root.path()
+            .join("schemas/run-message.schema.json")
+            .is_file()
+    );
+    assert!(!root.path().join("schemas/run-request.schema.json").exists());
+    let generated = generate(&descriptor).unwrap();
+    assert!(generated.rust.contains("NativeStreamSession"));
+    assert!(generated.typescript.contains("StreamSession"));
+}

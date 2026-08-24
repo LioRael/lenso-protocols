@@ -40,6 +40,12 @@ trait Ping {
         context: lenso::Ctx<'_>,
         request: PingRequest,
     ) -> Result<PingResponse, PingError>;
+
+    async fn watch(
+        &self,
+        context: lenso::Ctx<'_>,
+        request: PingRequest,
+    ) -> lenso::Stream<PingResponse, PingError>;
 }
 
 #[test]
@@ -49,7 +55,7 @@ fn annotated_trait_derives_identity_operations_values_and_errors() {
     assert_eq!(snapshot.version, "1.0.0");
     assert!(snapshot.portable);
     assert!(!snapshot.cross_lane_transfer);
-    assert_eq!(snapshot.operations.len(), 1);
+    assert_eq!(snapshot.operations.len(), 2);
     let operation = &snapshot.operations[0];
     assert_eq!(operation.name, "ping");
     assert_eq!(operation.interaction, "request");
@@ -70,4 +76,6 @@ fn annotated_trait_derives_identity_operations_values_and_errors() {
         operation.domain_error_schema["oneOf"][1]["properties"]["code"]["const"],
         "rejected"
     );
+    assert_eq!(snapshot.operations[1].name, "watch");
+    assert_eq!(snapshot.operations[1].interaction, "stream");
 }

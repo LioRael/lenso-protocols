@@ -43,8 +43,20 @@ fn snapshot_artifacts(
     let mut operations = Vec::with_capacity(snapshot.operations.len());
     for operation in &snapshot.operations {
         let stem = schema_stem(&operation.name)?;
-        let request = format!("schemas/{stem}-request.schema.json");
-        let response = format!("schemas/{stem}-response.schema.json");
+        let (request_suffix, response_suffix) = match operation.interaction.as_str() {
+            "request" => ("request", "response"),
+            "stream" => ("open", "message"),
+            interaction => {
+                return Err(CodegenError::InvalidDescriptor {
+                    detail: format!(
+                        "source Operation `{}` has unsupported interaction `{interaction}`",
+                        operation.name
+                    ),
+                });
+            }
+        };
+        let request = format!("schemas/{stem}-{request_suffix}.schema.json");
+        let response = format!("schemas/{stem}-{response_suffix}.schema.json");
         let domain_error = format!("schemas/{stem}-error.schema.json");
         operations.push(json!({
             "name": operation.name,
@@ -110,6 +122,7 @@ enum RenderContext {
     Operation,
     Schema,
     Properties,
+    RequiredArray,
 }
 
 fn render_value(
@@ -138,7 +151,9 @@ fn render_array(
         output.push_str("[]");
         return Ok(());
     }
-    if values.iter().all(Value::is_string) {
+    if values.iter().all(Value::is_string)
+        && !(matches!(context, RenderContext::RequiredArray) && values.len() > 5)
+    {
         output.push('[');
         for (index, value) in values.iter().enumerate() {
             if index > 0 {
@@ -199,12 +214,13 @@ fn render_object(
         output.push_str(": ");
         let child_context = if *key == "operations" {
             RenderContext::Descriptor
+        } else if *key == "required" {
+            RenderContext::RequiredArray
         } else {
             RenderContext::Schema
         };
         if *key == "properties" {
-            let required = object.get("required").and_then(Value::as_array);
-            render_properties(&object[*key], required, output, indent + 1)?;
+            render_properties(&object[*key], output, indent + 1)?;
         } else {
             render_value(&object[*key], output, indent + 1, child_context)?;
         }
@@ -234,9 +250,12 @@ fn ordered_keys(object: &Map<String, Value>, context: RenderContext) -> Vec<&str
             "response_schema",
             "domain_error_schema",
         ],
-        RenderContext::Schema | RenderContext::Root => &[
+        RenderContext::Schema | RenderContext::Root | RenderContext::RequiredArray => &[
             "$schema",
             "type",
+            "format",
+            "minimum",
+            "maximum",
             "required",
             "properties",
             "additionalProperties",
@@ -267,14 +286,11 @@ fn ordered_keys(object: &Map<String, Value>, context: RenderContext) -> Vec<&str
 }
 
 fn ordered_property_keys(object: &Map<String, Value>) -> Vec<&str> {
-    let mut keys: Vec<_> = object.keys().map(String::as_str).collect();
-    keys.sort_unstable();
-    keys
+    object.keys().map(String::as_str).collect()
 }
 
 fn render_properties(
     value: &Value,
-    required: Option<&Vec<Value>>,
     output: &mut String,
     indent: usize,
 ) -> Result<(), CodegenError> {
@@ -285,21 +301,7 @@ fn render_properties(
         output.push_str("{}");
         return Ok(());
     }
-    let mut keys = Vec::with_capacity(properties.len());
-    if let Some(required) = required {
-        for key in required.iter().filter_map(Value::as_str) {
-            if properties.contains_key(key) && !keys.contains(&key) {
-                keys.push(key);
-            }
-        }
-    }
-    let mut remaining: Vec<_> = properties
-        .keys()
-        .map(String::as_str)
-        .filter(|key| !keys.contains(key))
-        .collect();
-    remaining.sort_unstable();
-    keys.extend(remaining);
+    let keys: Vec<_> = properties.keys().map(String::as_str).collect();
 
     output.push_str("{\n");
     for (index, key) in keys.iter().enumerate() {

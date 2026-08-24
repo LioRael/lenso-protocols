@@ -4,6 +4,9 @@
 //! package build writes that snapshot deliberately during regeneration and
 //! otherwise checks the committed Descriptor and Schemas byte-for-byte. Other
 //! language bindings continue to generate only from those locked artifacts.
+//! An async method returning `Result<Response, DomainError>` declares a request
+//! Operation; one returning [`Stream<Message, DomainError>`] declares a stream
+//! Operation. Authors do not repeat the interaction kind as a string.
 
 use std::marker::PhantomData;
 
@@ -16,6 +19,16 @@ use serde_json::{Value, json};
 #[derive(Clone, Copy, Debug)]
 pub struct Ctx<'a> {
     marker: PhantomData<&'a ()>,
+}
+
+/// Authoring marker for one bounded, cancellable Stream Operation.
+///
+/// The generated runtime projection owns the actual stream session and its
+/// Runtime Failure channel. This type records only the portable message and
+/// Domain Error contract.
+#[derive(Clone, Copy, Debug)]
+pub struct Stream<Message, DomainError> {
+    marker: PhantomData<(Message, DomainError)>,
 }
 
 /// One complete Capability snapshot derived from its owning Rust source.
@@ -89,6 +102,15 @@ fn normalize_schema(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.remove("title");
+            if matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("integer" | "number")
+            ) {
+                // Rust implementation-width hints such as `int64` and
+                // `double` are not portable contract formats. Wide portable
+                // integers are authored explicitly as formatted strings.
+                object.remove("format");
+            }
             if object.get("type").and_then(Value::as_str) == Some("object")
                 && !object.contains_key("properties")
             {
