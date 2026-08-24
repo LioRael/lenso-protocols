@@ -1,9 +1,10 @@
 use std::path::Path;
 
 use lenso_contract_codegen::{
-    CodegenError, CompatibilityError, check_generated, generate, generate_browser_request_client,
-    lint_compatibility, load_descriptor, round_trip_portable_json, validate_wire_value,
-    write_generated,
+    CodegenError, CompatibilityError, ProjectionLanguage, check_generated, check_projection,
+    generate, generate_browser_request_client, generate_projection, lint_compatibility,
+    load_descriptor, round_trip_portable_json, validate_wire_value, write_generated,
+    write_projection,
 };
 use serde_json::json;
 
@@ -525,6 +526,43 @@ fn generated_artifact_check_detects_drift() {
     let error = check_generated(Path::new(FIXTURE), &rust_path, &typescript_path)
         .expect_err("drift must fail the check");
     assert!(matches!(error, CodegenError::GeneratedArtifactDrift { .. }));
+
+    std::fs::remove_dir_all(root).expect("the temporary artifact directory should be removable");
+}
+
+#[test]
+fn language_projections_write_and_check_independently() {
+    let root = std::env::temp_dir().join(format!(
+        "lenso-contract-codegen-projections-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("the temporary artifact directory should exist");
+    let rust_path = root.join("bindings.rs");
+    let typescript_path = root.join("bindings.ts");
+
+    let rust = generate_projection(FIXTURE.as_ref(), ProjectionLanguage::Rust)
+        .expect("Rust should generate independently");
+    assert_eq!(rust.language, ProjectionLanguage::Rust);
+    assert!(rust.source.contains("pub const CAPABILITY_ID"));
+
+    write_projection(FIXTURE.as_ref(), ProjectionLanguage::Rust, &rust_path)
+        .expect("Rust should generate without a TypeScript output");
+    check_projection(FIXTURE.as_ref(), ProjectionLanguage::Rust, &rust_path)
+        .expect("Rust should check without a TypeScript output");
+    assert!(!typescript_path.exists());
+
+    write_projection(
+        FIXTURE.as_ref(),
+        ProjectionLanguage::TypeScript,
+        &typescript_path,
+    )
+    .expect("TypeScript should generate without a Rust output");
+    check_projection(
+        FIXTURE.as_ref(),
+        ProjectionLanguage::TypeScript,
+        &typescript_path,
+    )
+    .expect("TypeScript should check without a Rust output");
 
     std::fs::remove_dir_all(root).expect("the temporary artifact directory should be removable");
 }

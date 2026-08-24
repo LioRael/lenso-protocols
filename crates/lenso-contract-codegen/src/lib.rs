@@ -237,7 +237,27 @@ pub struct GeneratedMetadata {
     pub cross_lane_transfer: bool,
 }
 
-/// Deterministic artifacts generated from one Descriptor and Schema source.
+/// One language projection emitted from a portable Capability contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectionLanguage {
+    /// Native Rust value, consumer, and provider bindings.
+    Rust,
+    /// TypeScript value, consumer, and provider bindings.
+    TypeScript,
+}
+
+/// One independently generated language projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GeneratedProjection {
+    /// Metadata embedded in the generated projection.
+    pub metadata: GeneratedMetadata,
+    /// Selected target language.
+    pub language: ProjectionLanguage,
+    /// Generated provider, client, value, and error bindings.
+    pub source: String,
+}
+
+/// Compatibility aggregate for callers that intentionally generate both projections.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GeneratedArtifacts {
     /// Metadata shared by all generated languages.
@@ -1121,8 +1141,7 @@ fn validate_domain_error_schema(schema: &Value, source_path: &Path) -> Result<()
     Ok(())
 }
 
-/// Generates both language artifacts from one Descriptor source.
-pub fn generate(path: &Path) -> Result<GeneratedArtifacts, CodegenError> {
+fn generation_input(path: &Path) -> Result<(GeneratedMetadata, ContractIr), CodegenError> {
     let descriptor = load_descriptor(path)?;
     let contract = contract_ir(&descriptor);
     let metadata = GeneratedMetadata {
@@ -1131,6 +1150,29 @@ pub fn generate(path: &Path) -> Result<GeneratedArtifacts, CodegenError> {
         portable: descriptor.portable,
         cross_lane_transfer: descriptor.cross_lane_transfer,
     };
+    Ok((metadata, contract))
+}
+
+/// Generates one selected language projection from a Descriptor source.
+pub fn generate_projection(
+    path: &Path,
+    language: ProjectionLanguage,
+) -> Result<GeneratedProjection, CodegenError> {
+    let (metadata, contract) = generation_input(path)?;
+    let source = match language {
+        ProjectionLanguage::Rust => generate_rust(&contract),
+        ProjectionLanguage::TypeScript => generate_typescript(&contract),
+    };
+    Ok(GeneratedProjection {
+        metadata,
+        language,
+        source,
+    })
+}
+
+/// Generates both language artifacts from one Descriptor source.
+pub fn generate(path: &Path) -> Result<GeneratedArtifacts, CodegenError> {
+    let (metadata, contract) = generation_input(path)?;
     Ok(GeneratedArtifacts {
         metadata,
         rust: generate_rust(&contract),
@@ -1150,6 +1192,16 @@ pub fn write_generated(
     Ok(())
 }
 
+/// Writes one selected language projection to a checked-in path.
+pub fn write_projection(
+    descriptor_path: &Path,
+    language: ProjectionLanguage,
+    output_path: &Path,
+) -> Result<(), CodegenError> {
+    let projection = generate_projection(descriptor_path, language)?;
+    write_artifact(output_path, &projection.source)
+}
+
 /// Fails when either checked-in artifact is not exactly reproducible.
 pub fn check_generated(
     descriptor_path: &Path,
@@ -1160,6 +1212,16 @@ pub fn check_generated(
     check_artifact(rust_path, &artifacts.rust)?;
     check_artifact(typescript_path, &artifacts.typescript)?;
     Ok(())
+}
+
+/// Fails when one selected language projection is not exactly reproducible.
+pub fn check_projection(
+    descriptor_path: &Path,
+    language: ProjectionLanguage,
+    output_path: &Path,
+) -> Result<(), CodegenError> {
+    let projection = generate_projection(descriptor_path, language)?;
+    check_artifact(output_path, &projection.source)
 }
 
 /// Round-trips one JSON value through the portable wire representation.
