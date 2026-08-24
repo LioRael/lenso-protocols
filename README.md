@@ -37,6 +37,20 @@ request dispatcher. Runtime packages consume the runtime-neutral
 Domain Error preservation, unknown Operations, and thrown Module failures stay
 inside generated contract code instead of leaking into a Bun or Node runtime.
 
+Capability owners generate and check only the language projections they ship.
+The original paired form remains available for packages that intentionally own
+both artifacts:
+
+```sh
+lenso-contract-codegen generate capability.json --rust src/generated.rs
+lenso-contract-codegen check capability.json --rust src/generated.rs
+
+lenso-contract-codegen generate capability.json --typescript src/capability.ts
+lenso-contract-codegen check capability.json --typescript src/capability.ts
+
+lenso-contract-codegen generate capability.json src/generated.rs generated/bindings.ts
+```
+
 ## Validation
 
 ```sh
