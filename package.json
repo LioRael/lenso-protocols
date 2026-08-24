@@ -7,13 +7,14 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "bun run --filter '@lenso/contract-runtime' build",
-    "package-smoke": "bun run --filter '@lenso/contract-runtime' smoke",
+    "build": "bun run --filter '@lenso/contract-runtime' build && bun run --filter '@lenso/process-protocol' build",
+    "package-smoke": "bun run --filter '@lenso/contract-runtime' smoke && bun run --filter '@lenso/process-protocol' smoke",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "bun test packages/lenso-contract-runtime/test fixtures/portable-contract/conformance.test.ts"
+    "test": "bun test packages/lenso-contract-runtime/test packages/lenso-process-protocol/test fixtures/portable-contract/conformance.test.ts fixtures/process-protocol/conformance.test.ts"
   },
   "dependencies": {
-    "@lenso/contract-runtime": "workspace:*"
+    "@lenso/contract-runtime": "workspace:*",
+    "@lenso/process-protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "1.4.0",
