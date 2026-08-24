@@ -1,9 +1,10 @@
 //! Portable Capability Descriptor validation and binding generation.
 //!
-//! The Descriptor and its package-local JSON Schemas are the only portable
-//! contract source. This crate deliberately lives above the Kernel: it reads
-//! authoring files, checks evolution rules, and emits deterministic Rust and
-//! TypeScript artifacts before an App is booted.
+//! A locked Descriptor and its package-local JSON Schemas are the portable
+//! cross-language authority. They may be derived from compiled source types,
+//! but every backend consumes the same checked snapshot. This crate deliberately
+//! lives above the Kernel: it checks evolution rules and emits deterministic
+//! Rust and TypeScript artifacts before an App is booted.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -19,9 +20,11 @@ use serde_json::{Map, Value};
 mod browser;
 mod ir;
 mod rust_debug;
+mod source;
 mod wit;
 
 pub use browser::generate_browser_request_client;
+pub use source::{check_source_snapshot, write_source_snapshot};
 
 use ir::{ContractIr, ErrorVariantIr, FieldIr, ObjectAdditionalIr, OperationIr, TypeIr};
 
