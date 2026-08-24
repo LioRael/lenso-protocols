@@ -8,10 +8,12 @@ repository.workspace = true
 description = "Code generator for portable Lenso Capability contracts."
 
 [dependencies]
+lenso-contract-authoring = { version = "0.1.0", path = "../lenso-contract-authoring" }
 serde_json.workspace = true
 semver.workspace = true
 
 [dev-dependencies]
+tempfile = "3"
 wit-parser = "0.252"
 
 [lints]
