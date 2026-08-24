@@ -4,12 +4,13 @@ on:
   push:
     tags:
       - "lenso-contract-runtime-ts-v*"
+      - "lenso-process-protocol-ts-v*"
 
 permissions: {}
 
 jobs:
   publish:
-    name: Publish @lenso/contract-runtime
+    name: Publish selected npm package
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -24,10 +25,23 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+      - name: Select package from release tag
+        run: |
+          case "$GITHUB_REF_NAME" in
+            lenso-contract-runtime-ts-v*)
+              echo "PACKAGE_DIR=packages/lenso-contract-runtime" >> "$GITHUB_ENV"
+              echo "TAG_PREFIX=lenso-contract-runtime-ts-v" >> "$GITHUB_ENV"
+              ;;
+            lenso-process-protocol-ts-v*)
+              echo "PACKAGE_DIR=packages/lenso-process-protocol" >> "$GITHUB_ENV"
+              echo "TAG_PREFIX=lenso-process-protocol-ts-v" >> "$GITHUB_ENV"
+              ;;
+            *) exit 1 ;;
+          esac
       - name: Verify release tag
         run: |
-          package_version="$(node -p "require('./packages/lenso-contract-runtime/package.json').version")"
-          test "$GITHUB_REF_NAME" = "lenso-contract-runtime-ts-v${package_version}"
+          package_version="$(node -p "require('./${PACKAGE_DIR}/package.json').version")"
+          test "$GITHUB_REF_NAME" = "${TAG_PREFIX}${package_version}"
       - name: Install workspace
         run: bun install --frozen-lockfile
       - name: Verify package
@@ -36,6 +50,6 @@ jobs:
           bun run typecheck
           bun run package-smoke
           bun run test
-          npm pack --dry-run ./packages/lenso-contract-runtime
+          npm pack --dry-run "./${PACKAGE_DIR}"
       - name: Publish package
-        run: npm publish ./packages/lenso-contract-runtime --access public --provenance
+        run: npm publish "./${PACKAGE_DIR}" --access public --provenance

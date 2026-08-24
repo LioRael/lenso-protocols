@@ -12,7 +12,10 @@
   },
   "include": [
     "fixtures/portable-contract/**/*.ts",
+    "fixtures/process-protocol/**/*.ts",
     "packages/lenso-contract-runtime/src/**/*.ts",
-    "packages/lenso-contract-runtime/test/**/*.ts"
+    "packages/lenso-contract-runtime/test/**/*.ts",
+    "packages/lenso-process-protocol/src/**/*.ts",
+    "packages/lenso-process-protocol/test/**/*.ts"
   ]
 }
