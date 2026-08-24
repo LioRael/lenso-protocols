@@ -84,18 +84,20 @@ fn expand_capability(
             .as_ref()
             .and_then(|operation| operation.name.as_ref())
             .map_or_else(|| method.sig.ident.to_string(), LitStr::value);
-        let interaction = operation
+        let request = request_type(method)?;
+        let (interaction, response, domain_error) = operation_result_types(method)?;
+        if let Some(declared_interaction) = operation
             .as_ref()
             .and_then(|operation| operation.interaction.as_ref())
-            .map_or_else(|| "request".to_owned(), LitStr::value);
-        if interaction != "request" {
+            && declared_interaction.value() != interaction
+        {
             return Err(syn::Error::new_spanned(
-                &method.sig,
-                "the first source-derived slice supports request Operations only",
+                declared_interaction,
+                format!(
+                    "Operation interaction is inferred as `{interaction}` from its return type"
+                ),
             ));
         }
-        let request = request_type(method)?;
-        let (response, domain_error) = result_types(method)?;
         operations.push(quote! {
             ::lenso_contract_authoring::OperationSnapshot {
                 name: #operation_name.to_owned(),
@@ -172,53 +174,77 @@ fn take_operation_arguments(
 }
 
 fn request_type(method: &syn::TraitItemFn) -> syn::Result<&Type> {
-    let arguments = method
-        .sig
-        .inputs
-        .iter()
-        .filter_map(|argument| match argument {
-            FnArg::Receiver(_) => None,
-            FnArg::Typed(argument) => Some(argument.ty.as_ref()),
-        })
-        .collect::<Vec<_>>();
-    match arguments.as_slice() {
-        [_, request] => Ok(*request),
-        _ => Err(syn::Error::new_spanned(
-            &method.sig.inputs,
-            "a request Operation must accept `&self`, `Ctx<'_>`, and one request value",
-        )),
+    if method.sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            &method.sig,
+            "a Capability Operation must be `async`",
+        ));
     }
+    let mut arguments = method.sig.inputs.iter();
+    let receiver = arguments.next();
+    let context = arguments.next();
+    let request = arguments.next();
+    if arguments.next().is_some()
+        || !matches!(receiver, Some(FnArg::Receiver(receiver)) if receiver.reference.is_some() && receiver.mutability.is_none())
+        || !matches!(context, Some(FnArg::Typed(context)) if is_context_type(&context.ty))
+    {
+        return Err(syn::Error::new_spanned(
+            &method.sig.inputs,
+            "a Capability Operation must accept `&self`, `Ctx<'_>`, and one request value",
+        ));
+    }
+    let Some(FnArg::Typed(request)) = request else {
+        return Err(syn::Error::new_spanned(
+            &method.sig.inputs,
+            "a Capability Operation must accept one request value",
+        ));
+    };
+    Ok(&request.ty)
 }
 
-fn result_types(method: &syn::TraitItemFn) -> syn::Result<(&Type, &Type)> {
+fn is_context_type(ty: &Type) -> bool {
+    let Type::Path(ty) = ty else {
+        return false;
+    };
+    ty.path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == "Ctx")
+}
+
+fn operation_result_types(method: &syn::TraitItemFn) -> syn::Result<(&'static str, &Type, &Type)> {
     let ReturnType::Type(_, output) = &method.sig.output else {
         return Err(syn::Error::new_spanned(
             &method.sig,
-            "a Capability Operation must return `Result<Response, DomainError>`",
+            "a Capability Operation must return `Result<Response, DomainError>` or `Stream<Message, DomainError>`",
         ));
     };
     let Type::Path(result) = output.as_ref() else {
         return Err(syn::Error::new_spanned(
             output,
-            "expected `Result<Response, DomainError>`",
+            "expected `Result<Response, DomainError>` or `Stream<Message, DomainError>`",
         ));
     };
     let Some(segment) = result.path.segments.last() else {
         return Err(syn::Error::new_spanned(
             output,
-            "expected `Result<Response, DomainError>`",
+            "expected `Result<Response, DomainError>` or `Stream<Message, DomainError>`",
         ));
     };
-    if segment.ident != "Result" {
-        return Err(syn::Error::new_spanned(
-            output,
-            "expected `Result<Response, DomainError>`",
-        ));
-    }
+    let interaction = match segment.ident.to_string().as_str() {
+        "Result" => "request",
+        "Stream" => "stream",
+        _ => {
+            return Err(syn::Error::new_spanned(
+                output,
+                "expected `Result<Response, DomainError>` or `Stream<Message, DomainError>`",
+            ));
+        }
+    };
     let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
         return Err(syn::Error::new_spanned(
             output,
-            "expected `Result<Response, DomainError>`",
+            "expected `Result<Response, DomainError>` or `Stream<Message, DomainError>`",
         ));
     };
     let types = arguments
@@ -230,10 +256,10 @@ fn result_types(method: &syn::TraitItemFn) -> syn::Result<(&Type, &Type)> {
         })
         .collect::<Vec<_>>();
     match types.as_slice() {
-        [response, domain_error] => Ok((*response, *domain_error)),
+        [response, domain_error] => Ok((interaction, *response, *domain_error)),
         _ => Err(syn::Error::new_spanned(
             output,
-            "expected `Result<Response, DomainError>`",
+            "expected exactly two response and Domain Error type arguments",
         )),
     }
 }
@@ -331,4 +357,45 @@ fn to_snake_case(value: &str) -> String {
         }
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use syn::{ItemTrait, parse_quote};
+
+    use super::{CapabilityArguments, expand_capability};
+
+    fn arguments() -> CapabilityArguments {
+        syn::parse_str(
+            r#"id = "example.test", major = 1, version = "1.0.0", portable = true, cross_lane_transfer = false"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn rejects_non_async_operations() {
+        let mut contract: ItemTrait = parse_quote! {
+            trait Test {
+                fn run(&self, context: lenso::Ctx<'_>, request: Input) -> Result<Output, Error>;
+            }
+        };
+        let error = expand_capability(&arguments(), &mut contract).unwrap_err();
+        assert!(error.to_string().contains("must be `async`"));
+    }
+
+    #[test]
+    fn rejects_an_interaction_that_disagrees_with_the_return_type() {
+        let mut contract: ItemTrait = parse_quote! {
+            trait Test {
+                #[lenso::operation(interaction = "request")]
+                async fn run(
+                    &self,
+                    context: lenso::Ctx<'_>,
+                    request: Input,
+                ) -> lenso::Stream<Output, Error>;
+            }
+        };
+        let error = expand_capability(&arguments(), &mut contract).unwrap_err();
+        assert!(error.to_string().contains("inferred as `stream`"));
+    }
 }

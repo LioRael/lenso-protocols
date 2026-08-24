@@ -130,11 +130,19 @@ fn type_ir_non_null(schema: &Value) -> TypeIr {
         return match schema_type {
             "object" => {
                 let required = required_fields(schema);
-                let fields = object
+                let mut properties = object
                     .get("properties")
                     .and_then(Value::as_object)
                     .into_iter()
                     .flatten()
+                    .collect::<Vec<_>>();
+                // Projection order is intentionally independent from JSON map
+                // insertion order. Source authoring preserves declaration order
+                // for locked snapshots; language backends retain the historical
+                // canonical name order.
+                properties.sort_unstable_by_key(|(name, _)| *name);
+                let fields = properties
+                    .into_iter()
                     .map(|(name, schema)| FieldIr {
                         name: name.clone(),
                         required: required.contains(name),
