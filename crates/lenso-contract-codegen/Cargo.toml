@@ -11,5 +11,8 @@ description = "Code generator for portable Lenso Capability contracts."
 serde_json.workspace = true
 semver.workspace = true
 
+[dev-dependencies]
+wit-parser = "0.252"
+
 [lints]
 workspace = true
