@@ -41,6 +41,21 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
             .contains("serde_json::from_value::<EchoError>")
     );
     assert!(projection.source.contains("&[ECHO_OPERATION]"));
+    assert!(
+        projection
+            .source
+            .contains("operation: &str, _request: &dyn std::any::Any")
+    );
+    assert!(
+        projection
+            .source
+            .contains("operation: &str, _message: &dyn std::any::Any")
+    );
+    assert!(
+        projection
+            .source
+            .contains("        Err(runtime_codec_unknown_operation(operation))")
+    );
 }
 
 #[test]
@@ -81,6 +96,14 @@ fn stream_descriptor_generates_exact_runtime_codec_projection() {
             .source
             .contains("serde_json::from_value::<ChatError>")
     );
+    assert!(
+        projection
+            .source
+            .contains("        Err(runtime_codec_unknown_operation(operation))")
+    );
+    assert!(!projection.source.contains(
+        "match operation {\n            _ => Err(runtime_codec_unknown_operation(operation))"
+    ));
 }
 
 #[test]
