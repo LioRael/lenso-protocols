@@ -5,6 +5,7 @@ members = [
     "crates/lenso-contract-authoring-macros",
     "crates/lenso-contract-codegen",
     "crates/lenso-contract-runtime",
+    "crates/lenso-module-authoring",
     "crates/lenso-process-protocol",
     "fixtures/portable-contract/rust",
 ]

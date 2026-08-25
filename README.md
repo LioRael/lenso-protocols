@@ -30,6 +30,13 @@ the Provider future in a second allocation; erased dispatch remains available
 only as the compatibility boundary. This Provider signature starts with
 `lenso-contract-codegen` 0.4 and requires `lenso-kernel` 0.1.4 or newer.
 
+Generated Rust Clients also implement
+`lenso_module_authoring::CapabilityClient`. This is the portable seam used by
+lifecycle-bound `Port<C>` fields: Module glue can connect a whole generated
+Client from Plan-owned dependencies without knowing its request, stream, or
+Event handle layout. Rust Capability crates generated with this version must
+depend on `lenso-module-authoring`.
+
 TypeScript bindings also expose a typed Provider interface and a generated
 request dispatcher. Runtime packages consume the runtime-neutral
 `CapabilityProviderBinding`; Module authors implement only their generated
