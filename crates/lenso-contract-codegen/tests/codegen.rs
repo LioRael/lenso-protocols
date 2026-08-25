@@ -428,6 +428,17 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
+            .contains("macro_rules! __lenso_required_many_profile_client")
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("impl CapabilityClientMany for ProfileClient")
+    );
+    assert!(artifacts.rust.contains("binding.provider_instance()"));
+    assert!(
+        artifacts
+            .rust
             .contains("RateLimited { payload: RoundTripErrorRateLimitedPayload }")
     );
     assert!(
