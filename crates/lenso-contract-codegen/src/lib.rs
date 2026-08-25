@@ -2950,6 +2950,50 @@ fn generate_rust(contract: &ContractIr) -> String {
         "pub const {capability_const}_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;\n\n"
     )
     .expect("writing to a String cannot fail");
+
+    let capability_macro_name = snake_case(&capability_name);
+    let client_macro_name = snake_case(&format!("{capability_name}Client"));
+    let operations = contract
+        .operations
+        .iter()
+        .map(|operation| Value::String(operation.name.clone()))
+        .collect::<Vec<_>>();
+    let operation_kinds = contract
+        .operations
+        .iter()
+        .filter(|operation| operation.interaction != "request")
+        .map(|operation| {
+            (
+                operation.name.clone(),
+                Value::String(operation.interaction.clone()),
+            )
+        })
+        .collect::<Map<_, _>>();
+    let provided_fragment = canonical_json(&serde_json::json!({
+        "capability_id": contract.capability_id,
+        "descriptor_version": contract.version,
+        "operations": operations,
+        "operation_kinds": operation_kinds,
+        "default_admission": {
+            "queue_capacity": 0,
+            "max_concurrency": 1
+        },
+        "operation_admissions": {},
+        "event_admission": null,
+        "cross_lane_transfer": contract.cross_lane_transfer
+    }));
+    let required_fragment = canonical_json(&serde_json::json!({
+        "capability_id": contract.capability_id,
+        "descriptor_version": contract.version,
+        "cardinality": "one"
+    }));
+    writeln!(
+        output,
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_provided_{capability_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_{client_macro_name} {{ () => {{ {} }}; }}\n",
+        quote_string(&provided_fragment),
+        quote_string(&required_fragment),
+    )
+    .expect("writing to a String cannot fail");
     for operation in &contract.operations {
         let operation_const = format!("{}_OPERATION", screaming_snake_case(&operation.name));
         writeln!(
@@ -3003,6 +3047,20 @@ fn generate_rust(contract: &ContractIr) -> String {
     output.push_str(&request_endpoint_impl);
     output.push_str(&stream_endpoint_impl);
     output.push_str(&event_endpoint_impl);
+    let request_endpoint_value = has_request_operations
+        .then_some("endpoint.clone() as ::std::rc::Rc<dyn ::lenso_kernel::NativeRequestEndpoint>");
+    let stream_endpoint_value = has_stream_operations
+        .then_some("endpoint.clone() as ::std::rc::Rc<dyn ::lenso_kernel::NativeStreamEndpoint>");
+    let event_endpoint_value = has_event_operations
+        .then_some("endpoint as ::std::rc::Rc<dyn ::lenso_kernel::NativeEventEndpoint>");
+    writeln!(
+        output,
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_provide_{capability_macro_name} {{\n    ($provider:expr, $lifecycle:expr) => {{{{\n        let endpoint = ::std::rc::Rc::new($crate::{capability_name}Endpoint::new($provider));\n        ::lenso_native_adapter::NativeModuleInstance::with_all_endpoints(\n            vec![{}],\n            vec![{}],\n            vec![{}],\n            $lifecycle,\n        )\n    }}}};\n}}\n",
+        request_endpoint_value.unwrap_or_default(),
+        stream_endpoint_value.unwrap_or_default(),
+        event_endpoint_value.unwrap_or_default(),
+    )
+    .expect("writing to a String cannot fail");
     let new_method = if contract.operations.len() == 1 {
         let field = rust_field_name(&contract.operations[0].name);
         let marker = &capability_name;
