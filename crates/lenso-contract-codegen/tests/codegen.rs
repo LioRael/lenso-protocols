@@ -54,6 +54,16 @@ fn stream_descriptor_generates_exact_runtime_codec_projection() {
     assert!(
         projection
             .source
+            .contains("operation: &str, _request: &dyn std::any::Any")
+    );
+    assert!(
+        projection
+            .source
+            .contains("operation: &str, _value: serde_json::Value")
+    );
+    assert!(
+        projection
+            .source
             .contains("request.downcast_ref::<ChatRequest>()")
     );
     assert!(

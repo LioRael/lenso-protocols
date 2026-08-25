@@ -3305,6 +3305,7 @@ fn generate_rust_error_codec(error_name: &str, variants: &[ErrorVariantIr]) -> S
     output
 }
 
+#[allow(clippy::too_many_lines)]
 fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> {
     let capability_name = pascal_case(
         contract
@@ -3374,11 +3375,36 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     let encode_arms = comma_terminated_arms(&encode_arms);
     let stream_open_arms = comma_terminated_arms(&stream_open_arms);
     let stream_encode_arms = comma_terminated_arms(&stream_encode_arms);
+    let request_parameter = if request_operations.is_empty() {
+        "_request"
+    } else {
+        "request"
+    };
+    let request_value_parameter = if request_operations.is_empty() {
+        "_value"
+    } else {
+        "value"
+    };
+    let stream_request_parameter = if stream_operations.is_empty() {
+        "_request"
+    } else {
+        "request"
+    };
+    let stream_message_parameter = if stream_operations.is_empty() {
+        "_message"
+    } else {
+        "message"
+    };
+    let stream_value_parameter = if stream_operations.is_empty() {
+        "_value"
+    } else {
+        "value"
+    };
 
     let mut output = generate_rust(contract);
     write!(
         output,
-        "\n#[derive(Debug, Default)]\npub struct {codec_name};\n\nimpl lenso_runtime_codec::JsonCapabilityCodec for {codec_name} {{\n    fn capability_id(&self) -> &'static str {{ CAPABILITY_ID }}\n\n    fn descriptor_version(&self) -> &'static str {{ DESCRIPTOR_VERSION }}\n\n    fn request_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n    fn stream_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n\n    fn encode_request(&self, operation: &str, request: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_response(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_domain_error(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn encode_stream_open(&self, operation: &str, request: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn encode_stream_message(&self, operation: &str, message: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_stream_message(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_stream_domain_error(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n}}\n\nfn runtime_codec_protocol_failure() -> RuntimeFailure {{ RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }} }}\n\nfn runtime_codec_unknown_operation(operation: &str) -> RuntimeFailure {{\n    RuntimeFailure::UnknownOperation {{ capability: CAPABILITY_ID, operation: operation.to_owned() }}\n}}\n",
+        "\n#[derive(Debug, Default)]\npub struct {codec_name};\n\nimpl lenso_runtime_codec::JsonCapabilityCodec for {codec_name} {{\n    fn capability_id(&self) -> &'static str {{ CAPABILITY_ID }}\n\n    fn descriptor_version(&self) -> &'static str {{ DESCRIPTOR_VERSION }}\n\n    fn request_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n    fn stream_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n\n    fn encode_request(&self, operation: &str, {request_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_response(&self, operation: &str, {request_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_domain_error(&self, operation: &str, {request_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn encode_stream_open(&self, operation: &str, {stream_request_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn encode_stream_message(&self, operation: &str, {stream_message_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_stream_message(&self, operation: &str, {stream_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_stream_domain_error(&self, operation: &str, {stream_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n}}\n\nfn runtime_codec_protocol_failure() -> RuntimeFailure {{ RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }} }}\n\nfn runtime_codec_unknown_operation(operation: &str) -> RuntimeFailure {{\n    RuntimeFailure::UnknownOperation {{ capability: CAPABILITY_ID, operation: operation.to_owned() }}\n}}\n",
         request_operations.join(", "),
         stream_operations.join(", "),
         encode_arms,
