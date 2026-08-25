@@ -9,13 +9,13 @@ build = "build.rs"
 [dependencies]
 futures.workspace = true
 lenso-kernel = "0.1.4"
-lenso-module-authoring = { path = "../../../crates/lenso-module-authoring", version = "0.1.0" }
+lenso-module-authoring = { path = "../../../crates/lenso-module-authoring", version = "0.1.1" }
 lenso-contract-runtime = { path = "../../../crates/lenso-contract-runtime", version = "0.1.1" }
 serde.workspace = true
 serde_json.workspace = true
 
 [build-dependencies]
-lenso-contract-codegen = { path = "../../../crates/lenso-contract-codegen", version = "0.6.1" }
+lenso-contract-codegen = { path = "../../../crates/lenso-contract-codegen", version = "0.6.2" }
 
 [lints]
 workspace = true
