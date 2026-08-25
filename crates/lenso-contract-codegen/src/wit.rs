@@ -76,7 +76,9 @@ impl WitGenerator {
         }
         let rendered = match ty {
             TypeIr::Any => return unsupported(format!("`{hint}` uses untyped JSON")),
-            TypeIr::String | TypeIr::Timestamp | TypeIr::Duration => "string".to_owned(),
+            TypeIr::String | TypeIr::RawJson | TypeIr::Timestamp | TypeIr::Duration => {
+                "string".to_owned()
+            }
             TypeIr::Int64 | TypeIr::Integer => "s64".to_owned(),
             TypeIr::Uint64 => "u64".to_owned(),
             TypeIr::Bytes => "list<u8>".to_owned(),

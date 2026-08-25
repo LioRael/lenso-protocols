@@ -22,6 +22,7 @@ pub(super) struct OperationIr {
 pub(super) enum TypeIr {
     Any,
     String,
+    RawJson,
     Int64,
     Uint64,
     Bytes,

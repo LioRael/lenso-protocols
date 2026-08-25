@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use ::serde::{Serialize, de::DeserializeOwned};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde_json::value::RawValue;
 
 /// Signed 64-bit integer encoded as a decimal string on the wire.
 pub type Int64 = String;
@@ -15,6 +16,155 @@ pub type Timestamp = String;
 pub type Duration = String;
 /// Distinguishes a missing field from an explicit `null` value.
 pub type OptionalValue<T> = Option<Option<T>>;
+
+/// One validated complete JSON value encoded as a JSON string on the wire.
+///
+/// The wrapper removes string concatenation from contract code while preserving
+/// the existing wire shape used by `*_json` fields.
+pub struct RawJson(Box<RawValue>);
+
+impl RawJson {
+    /// Validates and wraps one complete portable JSON value.
+    pub fn new(value: impl Into<String>) -> Result<Self, serde_json::Error> {
+        let value = value.into();
+        let parsed: serde_json::Value = serde_json::from_str(&value)?;
+        validate_portable_json_value(&parsed).map_err(portable_json_error)?;
+        RawValue::from_string(value).map(Self)
+    }
+
+    /// Returns the exact validated JSON source.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.get()
+    }
+
+    /// Returns the owned validated JSON source.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0.get().to_owned()
+    }
+}
+
+impl Default for RawJson {
+    fn default() -> Self {
+        Self(RawValue::from_string("null".to_owned()).expect("null is valid JSON"))
+    }
+}
+
+impl Clone for RawJson {
+    fn clone(&self) -> Self {
+        Self::new(self.as_str()).expect("RawJson always contains validated JSON")
+    }
+}
+
+impl std::fmt::Debug for RawJson {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("RawJson")
+            .field(&self.as_str())
+            .finish()
+    }
+}
+
+impl PartialEq for RawJson {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for RawJson {}
+
+impl std::str::FromStr for RawJson {
+    type Err = serde_json::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::new(value)
+    }
+}
+
+impl TryFrom<String> for RawJson {
+    type Error = serde_json::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl Serialize for RawJson {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ::serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> ::serde::Deserialize<'de> for RawJson {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        let value = <String as ::serde::Deserialize>::deserialize(deserializer)?;
+        Self::new(value).map_err(::serde::de::Error::custom)
+    }
+}
+
+/// A typed value encoded as one validated JSON string on the wire.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Json<T>(T);
+
+impl<T> Json<T> {
+    /// Wraps a typed value for JSON-string wire encoding.
+    pub const fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    /// Borrows the typed value.
+    pub const fn as_inner(&self) -> &T {
+        &self.0
+    }
+
+    /// Returns the owned typed value.
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> From<T> for Json<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<T> std::ops::Deref for Json<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_inner()
+    }
+}
+
+impl<T: Serialize> Serialize for Json<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ::serde::Serializer,
+    {
+        let encoded = encode_portable_json(&self.0).map_err(::serde::ser::Error::custom)?;
+        serializer.serialize_str(&encoded)
+    }
+}
+
+impl<'de, T: DeserializeOwned> ::serde::Deserialize<'de> for Json<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        let encoded = <String as ::serde::Deserialize>::deserialize(deserializer)?;
+        decode_portable_json(&encoded)
+            .map(Self)
+            .map_err(::serde::de::Error::custom)
+    }
+}
 
 /// Shared native bytes encoded as canonical padded Base64 on the wire.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -234,5 +384,31 @@ mod tests {
     fn portable_json_rejects_unsafe_integer_values() {
         let error = decode_portable_json::<serde_json::Value>("9007199254740992").unwrap_err();
         assert!(error.to_string().contains("unsafe number"));
+    }
+
+    #[test]
+    fn raw_json_validates_content_without_changing_the_string_wire_shape() {
+        let raw = RawJson::new(r#"{"ready":true}"#).unwrap();
+        assert_eq!(
+            serde_json::to_string(&raw).unwrap(),
+            r#""{\"ready\":true}""#
+        );
+        assert_eq!(
+            serde_json::from_str::<RawJson>(r#""{\"ready\":true}""#).unwrap(),
+            raw
+        );
+        assert!(RawJson::new("not JSON").is_err());
+        assert!(RawJson::new("9007199254740992").is_err());
+    }
+
+    #[test]
+    fn typed_json_round_trips_as_one_json_string() {
+        let value = Json::new(BTreeMap::from([("answer".to_owned(), 42_i32)]));
+        let wire = serde_json::to_string(&value).unwrap();
+        assert_eq!(wire, r#""{\"answer\":42}""#);
+        assert_eq!(
+            serde_json::from_str::<Json<BTreeMap<String, i32>>>(&wire).unwrap(),
+            value
+        );
     }
 }

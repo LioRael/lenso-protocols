@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use lenso_contract_codegen::{
     CodegenError, CompatibilityError, ProjectionLanguage, check_generated, check_projection,
@@ -635,6 +635,61 @@ fn contracts_without_bytes_reuse_the_contract_runtime_prelude() {
             .contains("function validatePortableJson")
     );
     assert!(!artifacts.typescript.contains("function isRecord"));
+}
+
+#[test]
+fn json_suffixed_string_fields_generate_validated_raw_json_in_rust_only() {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("schemas")).unwrap();
+    fs::write(
+        root.path().join("capability.json"),
+        r#"{
+          "id":"example.raw-json@1",
+          "version":"1.0.0",
+          "portable":true,
+          "operations":[{
+            "name":"inspect",
+            "interaction":"request",
+            "request_schema":"schemas/request.json",
+            "response_schema":"schemas/response.json",
+            "domain_error_schema":"schemas/error.json"
+          }]
+        }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schemas/request.json"),
+        r#"{
+          "type":"object",
+          "required":["payload_json","label"],
+          "properties":{
+            "payload_json":{"type":"string"},
+            "label":{"type":"string"}
+          },
+          "additionalProperties":false
+        }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schemas/response.json"),
+        r#"{"type":"null"}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.path().join("schemas/error.json"),
+        r#"{"oneOf":[{"const":"rejected"}]}"#,
+    )
+    .unwrap();
+
+    let artifacts = generate(&root.path().join("capability.json")).unwrap();
+    assert!(artifacts.rust.contains("pub payload_json: RawJson"));
+    assert!(artifacts.rust.contains("pub label: String"));
+    assert!(
+        artifacts
+            .rust
+            .contains("pub use lenso_contract_runtime::{RawJson, UnknownDomainError}")
+    );
+    assert!(artifacts.typescript.contains("payload_json: string"));
 }
 
 #[test]
