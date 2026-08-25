@@ -3316,13 +3316,18 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     );
     let codec_name = format!("{capability_name}JsonCodec");
     let mut types = RustTypes::new();
-    let mut operations = Vec::new();
+    let mut request_operations = Vec::new();
+    let mut stream_operations = Vec::new();
     let mut encode_arms = Vec::new();
     let mut response_arms = Vec::new();
     let mut error_arms = Vec::new();
+    let mut stream_open_arms = Vec::new();
+    let mut stream_encode_arms = Vec::new();
+    let mut stream_decode_arms = Vec::new();
+    let mut stream_error_arms = Vec::new();
 
     for operation in &contract.operations {
-        if operation.interaction != "request" {
+        if operation.interaction == "event" {
             return Err(CodegenError::UnsupportedInteraction {
                 operation: operation.name.clone(),
                 interaction: operation.interaction.clone(),
@@ -3334,29 +3339,66 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
             types.type_for(&operation.response, &format!("{operation_name}Response"));
         let error_type = format!("{operation_name}Error");
         let operation_const = format!("{}_OPERATION", screaming_snake_case(&operation.name));
-        operations.push(operation_const.clone());
-        encode_arms.push(format!(
-            "            {operation_const} => {{\n                let value = request.downcast_ref::<{request_type}>().ok_or_else(runtime_codec_protocol_failure)?;\n                serde_json::to_value(value).map_err(|_| runtime_codec_protocol_failure())\n            }}"
-        ));
-        response_arms.push(format!(
-            "            {operation_const} => serde_json::from_value::<{response_type}>(value)\n                .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                .map_err(|_| runtime_codec_protocol_failure()),"
-        ));
-        error_arms.push(format!(
-            "            {operation_const} => serde_json::from_value::<{error_type}>(value)\n                .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                .map_err(|_| runtime_codec_protocol_failure()),"
-        ));
+        match operation.interaction.as_str() {
+            "request" => {
+                request_operations.push(operation_const.clone());
+                encode_arms.push(format!(
+                    "            {operation_const} => {{\n                let value = request.downcast_ref::<{request_type}>().ok_or_else(runtime_codec_protocol_failure)?;\n                serde_json::to_value(value).map_err(|_| runtime_codec_protocol_failure())\n            }}"
+                ));
+                response_arms.push(format!(
+                    "            {operation_const} => serde_json::from_value::<{response_type}>(value)\n                .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                .map_err(|_| runtime_codec_protocol_failure()),"
+                ));
+                error_arms.push(format!(
+                    "            {operation_const} => serde_json::from_value::<{error_type}>(value)\n                .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                .map_err(|_| runtime_codec_protocol_failure()),"
+                ));
+            }
+            "stream" => {
+                stream_operations.push(operation_const.clone());
+                stream_open_arms.push(format!(
+                    "            {operation_const} => {{\n                let value = request.downcast_ref::<{request_type}>().ok_or_else(runtime_codec_protocol_failure)?;\n                serde_json::to_value(value).map_err(|_| runtime_codec_protocol_failure())\n            }}"
+                ));
+                stream_encode_arms.push(format!(
+                    "            {operation_const} => {{\n                let value = message.downcast_ref::<{response_type}>().ok_or_else(runtime_codec_protocol_failure)?;\n                serde_json::to_value(value).map_err(|_| runtime_codec_protocol_failure())\n            }}"
+                ));
+                stream_decode_arms.push(format!(
+                    "            {operation_const} => serde_json::from_value::<{response_type}>(value)\n                .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                .map_err(|_| runtime_codec_protocol_failure()),"
+                ));
+                stream_error_arms.push(format!(
+                    "            {operation_const} => serde_json::from_value::<{error_type}>(value)\n                .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                .map_err(|_| runtime_codec_protocol_failure()),"
+                ));
+            }
+            _ => unreachable!("Descriptor validation restricts interactions"),
+        }
     }
+
+    let encode_arms = comma_terminated_arms(&encode_arms);
+    let stream_open_arms = comma_terminated_arms(&stream_open_arms);
+    let stream_encode_arms = comma_terminated_arms(&stream_encode_arms);
 
     let mut output = generate_rust(contract);
     write!(
         output,
-        "\n#[derive(Debug, Default)]\npub struct {codec_name};\n\nimpl lenso_runtime_codec::JsonCapabilityCodec for {codec_name} {{\n    fn capability_id(&self) -> &'static str {{ CAPABILITY_ID }}\n\n    fn descriptor_version(&self) -> &'static str {{ DESCRIPTOR_VERSION }}\n\n    fn request_operations(&self) -> &'static [&'static str] {{\n        &[{}]\n    }}\n\n    fn encode_request(\n        &self,\n        operation: &str,\n        request: &dyn std::any::Any,\n    ) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{},\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_response(\n        &self,\n        operation: &str,\n        value: serde_json::Value,\n    ) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_domain_error(\n        &self,\n        operation: &str,\n        value: serde_json::Value,\n    ) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n}}\n\nfn runtime_codec_protocol_failure() -> RuntimeFailure {{\n    RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }}\n}}\n\nfn runtime_codec_unknown_operation(operation: &str) -> RuntimeFailure {{\n    RuntimeFailure::UnknownOperation {{\n        capability: CAPABILITY_ID,\n        operation: operation.to_owned(),\n    }}\n}}\n",
-        operations.join(", "),
-        encode_arms.join(",\n"),
+        "\n#[derive(Debug, Default)]\npub struct {codec_name};\n\nimpl lenso_runtime_codec::JsonCapabilityCodec for {codec_name} {{\n    fn capability_id(&self) -> &'static str {{ CAPABILITY_ID }}\n\n    fn descriptor_version(&self) -> &'static str {{ DESCRIPTOR_VERSION }}\n\n    fn request_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n    fn stream_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n\n    fn encode_request(&self, operation: &str, request: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_response(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_domain_error(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn encode_stream_open(&self, operation: &str, request: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn encode_stream_message(&self, operation: &str, message: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n        match operation {{\n{}            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_stream_message(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n\n    fn decode_stream_domain_error(&self, operation: &str, value: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n        match operation {{\n{}\n            _ => Err(runtime_codec_unknown_operation(operation)),\n        }}\n    }}\n}}\n\nfn runtime_codec_protocol_failure() -> RuntimeFailure {{ RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }} }}\n\nfn runtime_codec_unknown_operation(operation: &str) -> RuntimeFailure {{\n    RuntimeFailure::UnknownOperation {{ capability: CAPABILITY_ID, operation: operation.to_owned() }}\n}}\n",
+        request_operations.join(", "),
+        stream_operations.join(", "),
+        encode_arms,
         response_arms.join("\n"),
         error_arms.join("\n"),
+        stream_open_arms,
+        stream_encode_arms,
+        stream_decode_arms.join("\n"),
+        stream_error_arms.join("\n"),
     )
     .expect("writing generated Rust to a String cannot fail");
     Ok(output)
+}
+
+fn comma_terminated_arms(arms: &[String]) -> String {
+    if arms.is_empty() {
+        String::new()
+    } else {
+        format!("{},\n", arms.join(",\n"))
+    }
 }
 
 fn generate_rust_wire_codecs(
