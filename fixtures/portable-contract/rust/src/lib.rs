@@ -23,7 +23,10 @@ impl InherentProfile {
         &self,
         _context: InvocationContext,
         _request: RoundTripRequest,
-    ) -> Result<RoundTripResponse, ProfileRoundTripInvocationError> {
+    ) -> Result<
+        RoundTripResponse,
+        lenso_module_authoring::ModuleError<RoundTripError, RuntimeFailure>,
+    > {
         todo!("compile-time runtime-failure lowering fixture")
     }
 }
