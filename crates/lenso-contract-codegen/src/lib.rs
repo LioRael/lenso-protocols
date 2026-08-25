@@ -2919,7 +2919,7 @@ fn generate_rust(contract: &ContractIr) -> String {
         kernel_imports.join(", ")
     )
     .expect("writing to a String cannot fail");
-    output.push_str("use lenso_module::CapabilityClient;\n");
+    output.push_str("use lenso_module_authoring::CapabilityClient;\n");
     writeln!(
         output,
         "pub const CAPABILITY_ID: &str = {};",

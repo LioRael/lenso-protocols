@@ -317,9 +317,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "lenso-module"
+name = "lenso-module-authoring"
 version = "0.1.0"
-source = "git+https://github.com/LioRael/lenso?rev=2ba7930bc1fdf195219cfb36bd21ac19b9c9bf7c#2ba7930bc1fdf195219cfb36bd21ac19b9c9bf7c"
 
 [[package]]
 name = "lenso-portable-contract-fixture"
@@ -329,7 +328,7 @@ dependencies = [
  "lenso-contract-codegen",
  "lenso-contract-runtime",
  "lenso-kernel",
- "lenso-module",
+ "lenso-module-authoring",
  "serde",
  "serde_json",
 ]
