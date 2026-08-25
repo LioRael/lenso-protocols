@@ -432,6 +432,9 @@ impl ProfileClient {
 }
 
 impl CapabilityClient for ProfileClient {
+    type Dependencies = ModuleDependencies;
+    type Error = RuntimeFailure;
+
     const CAPABILITY_ID: &'static str = CAPABILITY_ID;
     const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
 
@@ -440,6 +443,12 @@ impl CapabilityClient for ProfileClient {
             corpus_round_trip: dependencies.one::<ProfileCorpusRoundTrip>()?,
             round_trip: dependencies.one::<ProfileRoundTrip>()?,
         })
+    }
+
+    fn already_connected() -> RuntimeFailure {
+        RuntimeFailure::ModuleFailure {
+            detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
+        }
     }
 }
 

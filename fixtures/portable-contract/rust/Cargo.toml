@@ -8,8 +8,8 @@ build = "build.rs"
 
 [dependencies]
 futures.workspace = true
-lenso-kernel = { git = "https://github.com/LioRael/lenso", rev = "04e510bd4741a7a03aa6189032ac3f50fb7aa2e7" }
-lenso-module = { git = "https://github.com/LioRael/lenso", rev = "04e510bd4741a7a03aa6189032ac3f50fb7aa2e7" }
+lenso-kernel = "0.1.4"
+lenso-module = { git = "https://github.com/LioRael/lenso", rev = "2ba7930bc1fdf195219cfb36bd21ac19b9c9bf7c" }
 lenso-contract-runtime = { path = "../../../crates/lenso-contract-runtime", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true

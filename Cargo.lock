@@ -161,7 +161,7 @@ checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -259,7 +259,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "lenso-app-plan"
 version = "0.1.4"
-source = "git+https://github.com/LioRael/lenso?rev=04e510bd4741a7a03aa6189032ac3f50fb7aa2e7#04e510bd4741a7a03aa6189032ac3f50fb7aa2e7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34dd8903d3180427d61784c9e07b229196cc6cb21618a83673153150398211b7"
 dependencies = [
  "serde",
  "serde_json",
@@ -308,7 +309,8 @@ dependencies = [
 [[package]]
 name = "lenso-kernel"
 version = "0.1.9"
-source = "git+https://github.com/LioRael/lenso?rev=04e510bd4741a7a03aa6189032ac3f50fb7aa2e7#04e510bd4741a7a03aa6189032ac3f50fb7aa2e7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d66c49832b0b5e825b4f746331a74fa943392db27bbe569365422dd468260fd"
 dependencies = [
  "futures",
  "lenso-app-plan",
@@ -317,10 +319,7 @@ dependencies = [
 [[package]]
 name = "lenso-module"
 version = "0.1.0"
-source = "git+https://github.com/LioRael/lenso?rev=04e510bd4741a7a03aa6189032ac3f50fb7aa2e7#04e510bd4741a7a03aa6189032ac3f50fb7aa2e7"
-dependencies = [
- "lenso-kernel",
-]
+source = "git+https://github.com/LioRael/lenso?rev=2ba7930bc1fdf195219cfb36bd21ac19b9c9bf7c#2ba7930bc1fdf195219cfb36bd21ac19b9c9bf7c"
 
 [[package]]
 name = "lenso-portable-contract-fixture"
@@ -423,7 +422,7 @@ checksum = "92ecd8964f8453721699a1ed72037b0db49ce2f5a5138486ee89bed6f67cdf3a"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -461,7 +460,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -497,7 +496,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -508,7 +507,7 @@ checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -561,9 +560,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.3"
+version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
 dependencies = [
  "proc-macro2",
  "quote",

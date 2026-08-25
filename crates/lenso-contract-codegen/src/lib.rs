@@ -3023,7 +3023,7 @@ fn generate_rust(contract: &ContractIr) -> String {
     };
     write!(
         output,
-        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n}}\n\n",
+        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    type Dependencies = ModuleDependencies;\n    type Error = RuntimeFailure;\n\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n\n    fn already_connected() -> RuntimeFailure {{\n        RuntimeFailure::ModuleFailure {{\n            detail: format!(\"Capability Port {{CAPABILITY_ID}} was connected more than once\"),\n        }}\n    }}\n}}\n\n",
         client_fields.join("\n"),
         new_method,
         client_methods.join("\n\n"),
