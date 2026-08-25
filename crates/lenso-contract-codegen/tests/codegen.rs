@@ -41,6 +41,15 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
             .contains("serde_json::from_value::<EchoError>")
     );
     assert!(projection.source.contains("&[ECHO_OPERATION]"));
+    assert!(projection.source.contains("pub struct GreetingGuestClient"));
+    assert!(projection.source.contains(
+        "pub fn echo(&self, request: &EchoRequest) -> Result<EchoResponse, lenso_guest_sdk::GuestError<EchoError>>"
+    ));
+    assert!(
+        projection
+            .source
+            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[ECHO_OPERATION], &[])")
+    );
     assert!(projection.source.contains("fn invoke_host_request(&self"));
     assert!(
         projection
@@ -97,6 +106,19 @@ fn stream_descriptor_generates_exact_runtime_codec_projection() {
 
     assert!(projection.source.contains("stream_operations(&self)"));
     assert!(projection.source.contains("&[CHAT_OPERATION]"));
+    assert!(
+        projection
+            .source
+            .contains("pub struct ConversationGuestClient")
+    );
+    assert!(projection.source.contains(
+        "pub fn chat(&self, request: &ChatRequest) -> Result<lenso_guest_sdk::GuestStream<H, ChatResponse, ChatError>, lenso_guest_sdk::GuestError<ChatError>>"
+    ));
+    assert!(
+        projection
+            .source
+            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[], &[CHAT_OPERATION])")
+    );
     assert!(projection.source.contains("fn open_host_stream(&self"));
     assert!(
         projection
