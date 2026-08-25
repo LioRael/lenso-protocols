@@ -44,11 +44,33 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
 }
 
 #[test]
-fn stream_descriptor_fails_runtime_codec_projection_closed() {
-    assert!(matches!(
-        generate_projection(Path::new(STREAM_FIXTURE), ProjectionLanguage::RustRuntime),
-        Err(CodegenError::UnsupportedInteraction { .. })
-    ));
+fn stream_descriptor_generates_exact_runtime_codec_projection() {
+    let projection =
+        generate_projection(Path::new(STREAM_FIXTURE), ProjectionLanguage::RustRuntime)
+            .expect("portable Stream Descriptor should project to a runtime codec");
+
+    assert!(projection.source.contains("stream_operations(&self)"));
+    assert!(projection.source.contains("&[CHAT_OPERATION]"));
+    assert!(
+        projection
+            .source
+            .contains("request.downcast_ref::<ChatRequest>()")
+    );
+    assert!(
+        projection
+            .source
+            .contains("message.downcast_ref::<ChatResponse>()")
+    );
+    assert!(
+        projection
+            .source
+            .contains("serde_json::from_value::<ChatResponse>")
+    );
+    assert!(
+        projection
+            .source
+            .contains("serde_json::from_value::<ChatError>")
+    );
 }
 
 #[test]
