@@ -191,14 +191,29 @@ impl<P: NotificationsProvider> NativeEventEndpoint for NotificationsEndpoint<P> 
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_native_provide_notifications {
-    ($provider:expr, $lifecycle:expr, $support:path) => {{
+macro_rules! __lenso_native_endpoints_notifications {
+    ($provider:expr, $support:path) => {{
         use $support as __LensoNativeSupport;
         let endpoint = ::std::rc::Rc::new($crate::NotificationsEndpoint::new($provider));
-        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+        (
             vec![],
             vec![],
             vec![endpoint as ::std::rc::Rc<dyn __LensoNativeSupport::NativeEventEndpoint>],
+        )
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_notifications {
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
+        let (request_endpoints, stream_endpoints, event_endpoints) =
+            $crate::__lenso_native_endpoints_notifications!($provider, $support);
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
+            request_endpoints,
+            stream_endpoints,
+            event_endpoints,
             $lifecycle,
         )
     }};
