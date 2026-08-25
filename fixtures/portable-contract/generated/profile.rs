@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "example.profile@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_profile { () => { "{\"capability_id\":\"example.pr
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_profile_client { () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_profile_client { () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const CORPUS_ROUND_TRIP_OPERATION: &str = "corpus_round_trip";
 pub const ROUND_TRIP_OPERATION: &str = "round_trip";
@@ -352,6 +356,9 @@ pub trait __LensoIntoProfileCorpusRoundTripResult {
 impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, CorpusRoundTripError> {
     fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoProfileCorpusRoundTripResult for Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> { self }
+}
 impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, lenso_module_authoring::ModuleError<CorpusRoundTripError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
         match self {
@@ -377,6 +384,9 @@ pub trait __LensoIntoProfileRoundTripResult {
 }
 impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, RoundTripError> {
     fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoProfileRoundTripResult for Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> { self }
 }
 impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, lenso_module_authoring::ModuleError<RoundTripError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {
@@ -563,6 +573,27 @@ impl CapabilityClient for ProfileClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for ProfileClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    corpus_round_trip: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<ProfileCorpusRoundTrip>()?,
+                    round_trip: binding.handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<ProfileRoundTrip>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
 

@@ -2699,6 +2699,7 @@ fn generate_rust(contract: &ContractIr) -> String {
     let mut event_endpoint_arms = Vec::new();
     let mut client_fields = Vec::new();
     let mut client_initializers = Vec::new();
+    let mut many_client_initializers = Vec::new();
     let mut client_methods = Vec::new();
     let mut invocation_errors = Vec::new();
     let mut error_codecs = Vec::new();
@@ -2795,7 +2796,7 @@ fn generate_rust(contract: &ContractIr) -> String {
             let field = rust_field_name(&operation.name);
             let conversion = format!("__LensoInto{capability_name}{operation_name}Result");
             provider_result_conversions.push(format!(
-                "#[doc(hidden)]\npub trait {conversion} {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure>;\n}}\nimpl {conversion} for Result<{response_type}, {error_name}> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{ Ok(self) }}\n}}\nimpl {conversion} for Result<{response_type}, lenso_module_authoring::ModuleError<{error_name}, RuntimeFailure>> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{\n        match self {{\n            Ok(value) => Ok(Ok(value)),\n            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),\n            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),\n        }}\n    }}\n}}\nimpl {conversion} for Result<{response_type}, {invocation_error_name}> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{\n        match self {{\n            Ok(value) => Ok(Ok(value)),\n            Err({invocation_error_name}::Domain(error)) => Ok(Err(error)),\n            Err({invocation_error_name}::Runtime(error)) => Err(error),\n        }}\n    }}\n}}\n"
+                "#[doc(hidden)]\npub trait {conversion} {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure>;\n}}\nimpl {conversion} for Result<{response_type}, {error_name}> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{ Ok(self) }}\n}}\nimpl {conversion} for Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{ self }}\n}}\nimpl {conversion} for Result<{response_type}, lenso_module_authoring::ModuleError<{error_name}, RuntimeFailure>> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{\n        match self {{\n            Ok(value) => Ok(Ok(value)),\n            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),\n            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),\n        }}\n    }}\n}}\nimpl {conversion} for Result<{response_type}, {invocation_error_name}> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{\n        match self {{\n            Ok(value) => Ok(Ok(value)),\n            Err({invocation_error_name}::Domain(error)) => Ok(Err(error)),\n            Err({invocation_error_name}::Runtime(error)) => Err(error),\n        }}\n    }}\n}}\n"
             ));
             provider_lowering_methods.push(format!(
                 "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::NativeRequestFuture<$crate::{marker_name}> {{\n            let module = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$module>::{field}(&module, context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
@@ -2808,6 +2809,9 @@ fn generate_rust(contract: &ContractIr) -> String {
             client_fields.push(format!("    {field}: NativeRequestHandle<{marker_name}>,"));
             client_initializers.push(format!(
                 "            {field}: dependencies.one::<{marker_name}>()?,"
+            ));
+            many_client_initializers.push(format!(
+                "                    {field}: binding.handle().ok_or(RuntimeFailure::Unavailable {{ capability: CAPABILITY_ID }})?.typed::<{marker_name}>()?,"
             ));
             client_methods.push(format!(
                 "    pub async fn {field}(&self, request: {request_type}) -> Result<{response_type}, {invocation_error_name}> {{\n        self.{field}.invoke({}_OPERATION, request).await\n            .map_err({invocation_error_name}::Runtime)?\n            .map_err({invocation_error_name}::Domain)\n    }}\n\n    pub async fn {field}_with_context(&self, context: InvocationContext, request: {request_type}) -> Result<{response_type}, {invocation_error_name}> {{\n        self.{field}.invoke_with_context({}_OPERATION, context, request).await\n            .map_err({invocation_error_name}::Runtime)?\n            .map_err({invocation_error_name}::Domain)\n    }}",
@@ -2845,6 +2849,9 @@ fn generate_rust(contract: &ContractIr) -> String {
             client_initializers.push(format!(
                 "            {field}: dependencies.one_stream::<{marker_name}>()?,"
             ));
+            many_client_initializers.push(format!(
+                "                    {field}: binding.stream_handle().ok_or(RuntimeFailure::Unavailable {{ capability: CAPABILITY_ID }})?.typed::<{marker_name}>()?,"
+            ));
             client_methods.push(format!(
                 "    pub async fn {field}(&self, request: {request_type}) -> Result<NativeStream<{marker_name}>, {invocation_error_name}> {{\n        self.{field}.open({operation_const}_OPERATION, request).await\n            .map_err({invocation_error_name}::Runtime)?\n            .map_err({invocation_error_name}::Domain)\n    }}\n\n    pub async fn {field}_with_context(&self, context: InvocationContext, request: {request_type}) -> Result<NativeStream<{marker_name}>, {invocation_error_name}> {{\n        self.{field}.open_with_context({operation_const}_OPERATION, context, request).await\n            .map_err({invocation_error_name}::Runtime)?\n            .map_err({invocation_error_name}::Domain)\n    }}"
             ));
@@ -2873,6 +2880,9 @@ fn generate_rust(contract: &ContractIr) -> String {
             client_fields.push(format!("    {field}: NativeEventHandle<{marker_name}>,"));
             client_initializers.push(format!(
                 "            {field}: dependencies.many_event::<{marker_name}>()?,"
+            ));
+            many_client_initializers.push(format!(
+                "                    {field}: binding.event_handle().ok_or(RuntimeFailure::Unavailable {{ capability: CAPABILITY_ID }})?.typed::<{marker_name}>()?,"
             ));
             client_methods.push(format!(
                 "    pub async fn {field}(&self, event: {request_type}) -> Vec<EventPublishResult> {{\n        self.{field}.publish({operation_const}_OPERATION, event).await\n    }}\n\n    pub async fn {field}_with_context(&self, context: InvocationContext, event: {request_type}) -> Vec<EventPublishResult> {{\n        self.{field}.publish_with_context({operation_const}_OPERATION, context, event).await\n    }}"
@@ -2946,7 +2956,9 @@ fn generate_rust(contract: &ContractIr) -> String {
         kernel_imports.join(", ")
     )
     .expect("writing to a String cannot fail");
-    output.push_str("use lenso_module_authoring::CapabilityClient;\n");
+    output.push_str(
+        "use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};\n",
+    );
     writeln!(
         output,
         "pub const CAPABILITY_ID: &str = {};",
@@ -3014,11 +3026,17 @@ fn generate_rust(contract: &ContractIr) -> String {
         "descriptor_version": contract.version,
         "cardinality": "one"
     }));
+    let required_many_fragment = canonical_json(&serde_json::json!({
+        "capability_id": contract.capability_id,
+        "descriptor_version": contract.version,
+        "cardinality": "many"
+    }));
     writeln!(
         output,
-        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_provided_{capability_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_{client_macro_name} {{ () => {{ {} }}; }}\n",
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_provided_{capability_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_{client_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_many_{client_macro_name} {{ () => {{ {} }}; }}\n",
         quote_string(&provided_fragment),
         quote_string(&required_fragment),
+        quote_string(&required_many_fragment),
     )
     .expect("writing to a String cannot fail");
     for operation in &contract.operations {
@@ -3120,11 +3138,12 @@ fn generate_rust(contract: &ContractIr) -> String {
     };
     write!(
         output,
-        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    type Dependencies = ModuleDependencies;\n    type Error = RuntimeFailure;\n\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n\n    fn already_connected() -> RuntimeFailure {{\n        RuntimeFailure::ModuleFailure {{\n            detail: format!(\"Capability Port {{CAPABILITY_ID}} was connected more than once\"),\n        }}\n    }}\n}}\n\n",
+        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    type Dependencies = ModuleDependencies;\n    type Error = RuntimeFailure;\n\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n\n    fn already_connected() -> RuntimeFailure {{\n        RuntimeFailure::ModuleFailure {{\n            detail: format!(\"Capability Port {{CAPABILITY_ID}} was connected more than once\"),\n        }}\n    }}\n}}\n\nimpl CapabilityClientMany for {capability_name}Client {{\n    fn many_from_dependencies(\n        dependencies: &ModuleDependencies,\n    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {{\n        dependencies\n            .bindings()\n            .iter()\n            .filter(|binding| binding.capability_id() == CAPABILITY_ID)\n            .map(|binding| {{\n                Ok(BoundCapabilityClient::new(\n                    binding.provider_instance(),\n                    Self {{\n{}\n                    }},\n                ))\n            }})\n            .collect()\n    }}\n}}\n\n",
         client_fields.join("\n"),
         new_method,
         client_methods.join("\n\n"),
-        client_initializers.join("\n")
+        client_initializers.join("\n"),
+        many_client_initializers.join("\n")
     )
     .expect("writing to a String cannot fail");
     for error in invocation_errors {

@@ -3,7 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{EventCapability, EventPublishResult, InvocationContext, ModuleDependencies, NativeEventEndpoint, NativeEventHandle, RuntimeFailure};
 
-use lenso_module_authoring::CapabilityClient;
+use lenso_module_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
 pub const CAPABILITY_ID: &str = "example.notifications@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -18,6 +18,10 @@ macro_rules! __lenso_provided_notifications { () => { "{\"capability_id\":\"exam
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_required_notifications_client { () => { "{\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_notifications_client { () => { "{\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
 
 pub const NOTIFY_OPERATION: &str = "notify";
 
@@ -258,5 +262,25 @@ impl CapabilityClient for NotificationsClient {
         RuntimeFailure::ModuleFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
         }
+    }
+}
+
+impl CapabilityClientMany for NotificationsClient {
+    fn many_from_dependencies(
+        dependencies: &ModuleDependencies,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        dependencies
+            .bindings()
+            .iter()
+            .filter(|binding| binding.capability_id() == CAPABILITY_ID)
+            .map(|binding| {
+                Ok(BoundCapabilityClient::new(
+                    binding.provider_instance(),
+                    Self {
+                    notify: binding.event_handle().ok_or(RuntimeFailure::Unavailable { capability: CAPABILITY_ID })?.typed::<Notifications>()?,
+                    },
+                ))
+            })
+            .collect()
     }
 }
