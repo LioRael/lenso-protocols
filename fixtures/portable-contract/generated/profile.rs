@@ -356,6 +356,9 @@ pub trait __LensoIntoProfileCorpusRoundTripResult {
 impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, CorpusRoundTripError> {
     fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoProfileCorpusRoundTripResult for Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> { self }
+}
 impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, lenso_module_authoring::ModuleError<CorpusRoundTripError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
         match self {
@@ -381,6 +384,9 @@ pub trait __LensoIntoProfileRoundTripResult {
 }
 impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, RoundTripError> {
     fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoProfileRoundTripResult for Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {
+    fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> { self }
 }
 impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, lenso_module_authoring::ModuleError<RoundTripError, RuntimeFailure>> {
     fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {

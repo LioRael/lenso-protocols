@@ -383,6 +383,9 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
             .rust
             .contains("-> NativeRequestFuture<ProfileRoundTrip>;")
     );
+    assert!(artifacts.rust.contains(
+        "impl __LensoIntoProfileRoundTripResult for Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure>"
+    ));
     assert!(
         artifacts
             .rust
