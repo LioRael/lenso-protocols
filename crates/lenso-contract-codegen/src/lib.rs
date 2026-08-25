@@ -2685,12 +2685,15 @@ fn generate_rust(contract: &ContractIr) -> String {
             .unwrap_or("Capability"),
     );
     let capability_const = screaming_snake_case(&capability_name);
+    let native_support_name = format!("__LensoNativeSupport{capability_name}");
     let mut types = RustTypes::new();
     let mut operation_rows = Vec::new();
     let mut stream_operation_rows = Vec::new();
     let mut event_operation_rows = Vec::new();
     let mut operation_markers = Vec::new();
     let mut provider_methods = Vec::new();
+    let mut provider_lowering_methods = Vec::new();
+    let mut provider_result_conversions = Vec::new();
     let mut endpoint_arms = Vec::new();
     let mut stream_endpoint_arms = Vec::new();
     let mut event_endpoint_arms = Vec::new();
@@ -2789,6 +2792,14 @@ fn generate_rust(contract: &ContractIr) -> String {
                 "    fn {}(&self, context: InvocationContext, request: {request_type}) -> NativeRequestFuture<{marker_name}>;",
                 rust_field_name(&operation.name),
             ));
+            let field = rust_field_name(&operation.name);
+            let conversion = format!("__LensoInto{capability_name}{operation_name}Result");
+            provider_result_conversions.push(format!(
+                "#[doc(hidden)]\npub trait {conversion} {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure>;\n}}\nimpl {conversion} for Result<{response_type}, {error_name}> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{ Ok(self) }}\n}}\nimpl {conversion} for Result<{response_type}, {invocation_error_name}> {{\n    fn __lenso_into_result(self) -> Result<Result<{response_type}, {error_name}>, RuntimeFailure> {{\n        match self {{\n            Ok(value) => Ok(Ok(value)),\n            Err({invocation_error_name}::Domain(error)) => Ok(Err(error)),\n            Err({invocation_error_name}::Runtime(error)) => Err(error),\n        }}\n    }}\n}}\n"
+            ));
+            provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::NativeRequestFuture<$crate::{marker_name}> {{\n            let module = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$module>::{field}(&module, context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
+            ));
             endpoint_arms.push(format!(
                 "            {operation_const}_OPERATION => {{\n                let Ok(request) = request.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let invocation = Rc::clone(&self.provider).{}(context, *request);\n                Box::pin(async move {{\n                    invocation.await.map(|result| {{\n                        result\n                            .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                            .map_err(|error| Box::new(error) as Box<dyn std::any::Any>)\n                    }})\n                }})\n            }}",
                 rust_field_name(&operation.name),
@@ -2817,6 +2828,14 @@ fn generate_rust(contract: &ContractIr) -> String {
                 "    fn {}(&self, context: InvocationContext, request: {request_type}) -> LocalBoxFuture<'static, Result<Box<dyn NativeStreamSession>, {invocation_error_name}>>;",
                 rust_field_name(&operation.name)
             ));
+            let field = rust_field_name(&operation.name);
+            let conversion = format!("__LensoInto{capability_name}{operation_name}StreamResult");
+            provider_result_conversions.push(format!(
+                "#[doc(hidden)]\npub trait {conversion} {{\n    fn __lenso_into_result(self) -> Result<Box<dyn NativeStreamSession>, {invocation_error_name}>;\n}}\nimpl<S> {conversion} for Result<S, {error_name}>\nwhere\n    S: NativeStreamSession + 'static,\n{{\n    fn __lenso_into_result(self) -> Result<Box<dyn NativeStreamSession>, {invocation_error_name}> {{\n        self.map(|stream| Box::new(stream) as Box<dyn NativeStreamSession>)\n            .map_err({invocation_error_name}::Domain)\n    }}\n}}\nimpl<S> {conversion} for Result<S, {invocation_error_name}>\nwhere\n    S: NativeStreamSession + 'static,\n{{\n    fn __lenso_into_result(self) -> Result<Box<dyn NativeStreamSession>, {invocation_error_name}> {{\n        self.map(|stream| Box::new(stream) as Box<dyn NativeStreamSession>)\n    }}\n}}\n"
+            ));
+            provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<Box<dyn {native_support_name}::NativeStreamSession>, $crate::{invocation_error_name}>> {{\n            let module = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$module>::{field}(&module, context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
+            ));
             stream_endpoint_arms.push(format!(
                 "            {operation_const}_OPERATION => {{\n                let Ok(request) = request.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let provider = Rc::clone(&self.provider);\n                Box::pin(async move {{\n                    match provider.{}(context, *request).await {{\n                        Ok(value) => Ok(Ok(value as Box<dyn NativeStreamSession>)),\n                        Err({invocation_error_name}::Domain(error)) => Ok(Err(Box::new(error) as Box<dyn std::any::Any>)),\n                        Err({invocation_error_name}::Runtime(error)) => Err(error),\n                    }}\n                }})\n            }}",
                 rust_field_name(&operation.name),
@@ -2837,6 +2856,10 @@ fn generate_rust(contract: &ContractIr) -> String {
             provider_methods.push(format!(
                 "    fn {}(&self, context: InvocationContext, event: {request_type});",
                 rust_field_name(&operation.name)
+            ));
+            let field = rust_field_name(&operation.name);
+            provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, event: $crate::{request_type}) {{\n            <$module>::{field}(self, context, event);\n        }}"
             ));
             event_endpoint_arms.push(format!(
                 "            {operation_const}_OPERATION => {{\n                let Ok(event) = event.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let provider = Rc::clone(&self.provider);\n                Box::pin(async move {{\n                    provider.{}(context, *event);\n                    Ok(())\n                }})\n            }}",
@@ -3025,10 +3048,20 @@ fn generate_rust(contract: &ContractIr) -> String {
         output.push_str(&codec);
         output.push('\n');
     }
+    for conversion in provider_result_conversions {
+        output.push_str(&conversion);
+        output.push('\n');
+    }
     write!(
         output,
         "pub trait {capability_name}Provider: fmt::Debug + 'static {{\n{}\n}}\n\n",
         provider_methods.join("\n")
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_lower_{capability_macro_name} {{\n    ($module:ty, $support:path) => {{\n        use $support as {native_support_name};\n        impl $crate::{capability_name}Provider for $module {{\n{}\n        }}\n    }};\n}}\n",
+        provider_lowering_methods.join("\n")
     )
     .expect("writing to a String cannot fail");
     if has_request_operations {

@@ -1,5 +1,35 @@
 include!("../../generated/profile.rs");
 
+#[doc(hidden)]
+mod __native_support {
+    pub use lenso_kernel::{InvocationContext, NativeRequestFuture};
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+struct InherentProfile;
+
+#[allow(dead_code)]
+impl InherentProfile {
+    async fn corpus_round_trip(
+        &self,
+        _context: InvocationContext,
+        _request: CorpusRoundTripRequest,
+    ) -> Result<CorpusRoundTripResponse, CorpusRoundTripError> {
+        todo!("compile-time domain-method lowering fixture")
+    }
+
+    async fn round_trip(
+        &self,
+        _context: InvocationContext,
+        _request: RoundTripRequest,
+    ) -> Result<RoundTripResponse, ProfileRoundTripInvocationError> {
+        todo!("compile-time runtime-failure lowering fixture")
+    }
+}
+
+__lenso_native_lower_profile!(InherentProfile, __native_support);
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
