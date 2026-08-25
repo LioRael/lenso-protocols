@@ -53,9 +53,7 @@ pub struct OperationSnapshot {
 
 /// Generates one closed, inline JSON Schema 2020-12 document from a Rust type.
 pub fn schema_for<T: JsonSchemaTrait>() -> Value {
-    let settings = SchemaSettings::draft2020_12().with(|settings| {
-        settings.inline_subschemas = true;
-    });
+    let settings = SchemaSettings::draft2020_12();
     let schema = settings.into_generator().into_root_schema_for::<T>();
     let mut value = serde_json::to_value(schema).expect("a schemars Schema must serialize");
     normalize_schema(&mut value);

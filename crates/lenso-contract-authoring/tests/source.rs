@@ -11,8 +11,15 @@ struct PingRequest {
 
 #[derive(lenso::JsonSchema)]
 #[schemars(deny_unknown_fields)]
+struct PingMetadata {
+    source: String,
+}
+
+#[derive(lenso::JsonSchema)]
+#[schemars(deny_unknown_fields)]
 struct PingResponse {
     value: String,
+    metadata: PingMetadata,
 }
 
 #[derive(lenso::JsonSchema)]
@@ -61,6 +68,11 @@ fn annotated_trait_derives_identity_operations_values_and_errors() {
     assert_eq!(operation.interaction, "request");
     assert_eq!(operation.request_schema["title"], "PingRequest");
     assert_eq!(operation.response_schema["title"], "PingResponse");
+    assert!(operation.response_schema["$defs"]["PingMetadata"].is_object());
+    assert_eq!(
+        operation.response_schema["properties"]["metadata"]["$ref"],
+        "#/$defs/PingMetadata"
+    );
     assert_eq!(operation.request_schema["additionalProperties"], false);
     assert_eq!(
         operation.request_schema["properties"]["value"]["minLength"],

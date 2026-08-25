@@ -91,16 +91,18 @@ fn schema_titles_preserve_authored_type_names_across_projections() {
         "properties": {
             "tools": {
                 "type": "array",
-                "items": {
-                    "title": "ToolDefinition",
-                    "type": "object",
-                    "required": ["name"],
-                    "properties": { "name": { "type": "string" } },
-                    "additionalProperties": false
-                }
+                "items": { "$ref": "#/$defs/ToolDefinition" }
             }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "$defs": {
+            "ToolDefinition": {
+                "type": "object",
+                "required": ["name"],
+                "properties": { "name": { "type": "string" } },
+                "additionalProperties": false
+            }
+        }
     });
 
     write_source_snapshot(&snapshot, &descriptor).unwrap();
