@@ -3,3 +3,15 @@ release_always = false
 changelog_update = false
 git_tag_name = "{{ package }}-v{{ version }}"
 pr_labels = ["release"]
+
+# These packages remain publishable, but their current releases depend on the
+# first lenso-contract-authoring Trusted Publisher being authorized on
+# crates.io. Keep them out of the automated queue so they cannot block
+# independently releasable runtime and process protocol crates.
+[[package]]
+name = "lenso-contract-authoring"
+release = false
+
+[[package]]
+name = "lenso-contract-codegen"
+release = false
