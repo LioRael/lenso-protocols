@@ -87,13 +87,20 @@ impl WitGenerator {
             TypeIr::Array(item) => {
                 format!("list<{}>", self.ty(item, &format!("{hint}Item"), true)?)
             }
-            TypeIr::Enum(values) => self.enumeration(hint, values)?,
-            TypeIr::Object { fields, additional } => {
+            TypeIr::Enum { name, values } => {
+                self.enumeration(name.as_deref().unwrap_or(hint), values)?
+            }
+            TypeIr::Object {
+                name,
+                fields,
+                additional,
+            } => {
                 if !matches!(additional, ObjectAdditionalIr::Closed) {
                     return unsupported(format!(
                         "object `{hint}` permits additional properties without an exact WIT map shape"
                     ));
                 }
+                let hint = name.as_deref().unwrap_or(hint);
                 let name = kebab(hint);
                 let mut declaration = format!("record {name} {{\n");
                 for field in fields {

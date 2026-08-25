@@ -31,9 +31,13 @@ pub(super) enum TypeIr {
     Number,
     Boolean,
     Null,
-    Enum(Vec<String>),
+    Enum {
+        name: Option<String>,
+        values: Vec<String>,
+    },
     Array(Box<Self>),
     Object {
+        name: Option<String>,
         fields: Vec<FieldIr>,
         additional: ObjectAdditionalIr,
     },

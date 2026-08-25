@@ -118,13 +118,14 @@ fn type_ir_non_null(schema: &Value) -> TypeIr {
         return TypeIr::Any;
     };
     if let Some(values) = object.get("enum").and_then(Value::as_array) {
-        return TypeIr::Enum(
-            values
+        return TypeIr::Enum {
+            name: schema_declared_type_name(object),
+            values: values
                 .iter()
                 .filter_map(Value::as_str)
                 .map(ToOwned::to_owned)
                 .collect(),
-        );
+        };
     }
     if let Some(schema_type) = object.get("type").and_then(Value::as_str) {
         return match schema_type {
@@ -160,7 +161,11 @@ fn type_ir_non_null(schema: &Value) -> TypeIr {
                         ObjectAdditionalIr::Typed(Box::new(type_ir_from_schema(schema)))
                     }
                 };
-                TypeIr::Object { fields, additional }
+                TypeIr::Object {
+                    name: schema_declared_type_name(object),
+                    fields,
+                    additional,
+                }
             }
             "array" => object.get("items").map_or(TypeIr::Any, |items| {
                 TypeIr::Array(Box::new(type_ir_from_schema(items)))
@@ -181,6 +186,14 @@ fn type_ir_non_null(schema: &Value) -> TypeIr {
         };
     }
     TypeIr::Any
+}
+
+fn schema_declared_type_name(schema: &Map<String, Value>) -> Option<String> {
+    schema
+        .get("title")
+        .and_then(Value::as_str)
+        .filter(|title| !title.is_empty())
+        .map(pascal_case)
 }
 
 /// A validated, self-contained portable Capability Descriptor.
@@ -2542,7 +2555,9 @@ impl RustTypes {
         match ty {
             TypeIr::Any => "serde_json::Value".to_owned(),
             TypeIr::String => "String".to_owned(),
-            TypeIr::Enum(values) => self.enum_type(nested_name, values),
+            TypeIr::Enum { name, values } => {
+                self.enum_type(name.as_deref().unwrap_or(nested_name), values)
+            }
             TypeIr::Int64 => "Int64".to_owned(),
             TypeIr::Uint64 => "Uint64".to_owned(),
             TypeIr::Bytes => "Bytes".to_owned(),
@@ -2558,7 +2573,12 @@ impl RustTypes {
                     self.type_for(items, &format!("{nested_name}Item"))
                 )
             }
-            TypeIr::Object { fields, additional } => {
+            TypeIr::Object {
+                name,
+                fields,
+                additional,
+            } => {
+                let nested_name = name.as_deref().unwrap_or(nested_name);
                 if fields.is_empty() {
                     match additional {
                         ObjectAdditionalIr::Closed => self.object(nested_name, fields),
@@ -2645,7 +2665,7 @@ impl TypeScriptTypes {
             TypeIr::Integer | TypeIr::Number => "number".to_owned(),
             TypeIr::Boolean => "boolean".to_owned(),
             TypeIr::Null => "null".to_owned(),
-            TypeIr::Enum(values) => values
+            TypeIr::Enum { values, .. } => values
                 .iter()
                 .map(|value| quote_string(value))
                 .collect::<Vec<_>>()
@@ -2656,7 +2676,12 @@ impl TypeScriptTypes {
                     self.type_for(items, &format!("{nested_name}Item"))
                 )
             }
-            TypeIr::Object { fields, additional } => {
+            TypeIr::Object {
+                name,
+                fields,
+                additional,
+            } => {
+                let nested_name = name.as_deref().unwrap_or(nested_name);
                 if fields.is_empty() {
                     match additional {
                         ObjectAdditionalIr::Closed => self.object(nested_name, fields),
@@ -3192,7 +3217,9 @@ fn collect_rust_runtime_types(ty: &TypeIr, types: &mut BTreeSet<&'static str>) {
         TypeIr::Array(item) | TypeIr::Nullable(item) => {
             collect_rust_runtime_types(item, types);
         }
-        TypeIr::Object { fields, additional } => {
+        TypeIr::Object {
+            fields, additional, ..
+        } => {
             for field in fields {
                 if !field.required && field.ty.is_nullable() {
                     types.insert("OptionalValue");
@@ -3209,7 +3236,7 @@ fn collect_rust_runtime_types(ty: &TypeIr, types: &mut BTreeSet<&'static str>) {
         | TypeIr::Number
         | TypeIr::Boolean
         | TypeIr::Null
-        | TypeIr::Enum(_) => {}
+        | TypeIr::Enum { .. } => {}
     }
 }
 

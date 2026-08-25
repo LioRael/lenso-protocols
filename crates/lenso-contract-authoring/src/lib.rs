@@ -101,7 +101,6 @@ pub fn domain_error_union(variants: Vec<Value>) -> Value {
 fn normalize_schema(value: &mut Value) {
     match value {
         Value::Object(object) => {
-            object.remove("title");
             if matches!(
                 object.get("type").and_then(Value::as_str),
                 Some("integer" | "number")
