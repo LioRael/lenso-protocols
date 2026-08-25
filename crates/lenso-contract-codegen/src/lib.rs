@@ -2920,9 +2920,6 @@ fn generate_rust(contract: &ContractIr) -> String {
     )
     .expect("writing to a String cannot fail");
     output.push_str("use lenso_module_authoring::CapabilityClient;\n");
-    output.push_str(
-        "#[doc(hidden)]\npub mod __lenso_native_support {\n    pub use lenso_kernel::{NativeEventEndpoint, NativeRequestEndpoint, NativeStreamEndpoint};\n    pub use lenso_native_adapter::NativeModuleInstance;\n}\n\n",
-    );
     writeln!(
         output,
         "pub const CAPABILITY_ID: &str = {};",
@@ -3050,18 +3047,15 @@ fn generate_rust(contract: &ContractIr) -> String {
     output.push_str(&request_endpoint_impl);
     output.push_str(&stream_endpoint_impl);
     output.push_str(&event_endpoint_impl);
-    let request_endpoint_value = has_request_operations.then_some(
-        "endpoint.clone() as ::std::rc::Rc<dyn $crate::__lenso_native_support::NativeRequestEndpoint>",
-    );
-    let stream_endpoint_value = has_stream_operations.then_some(
-        "endpoint.clone() as ::std::rc::Rc<dyn $crate::__lenso_native_support::NativeStreamEndpoint>",
-    );
-    let event_endpoint_value = has_event_operations.then_some(
-        "endpoint as ::std::rc::Rc<dyn $crate::__lenso_native_support::NativeEventEndpoint>",
-    );
+    let request_endpoint_value = has_request_operations
+        .then_some("endpoint.clone() as ::std::rc::Rc<dyn $support::NativeRequestEndpoint>");
+    let stream_endpoint_value = has_stream_operations
+        .then_some("endpoint.clone() as ::std::rc::Rc<dyn $support::NativeStreamEndpoint>");
+    let event_endpoint_value = has_event_operations
+        .then_some("endpoint as ::std::rc::Rc<dyn $support::NativeEventEndpoint>");
     writeln!(
         output,
-        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_provide_{capability_macro_name} {{\n    ($provider:expr, $lifecycle:expr) => {{{{\n        let endpoint = ::std::rc::Rc::new($crate::{capability_name}Endpoint::new($provider));\n        $crate::__lenso_native_support::NativeModuleInstance::with_all_endpoints(\n            vec![{}],\n            vec![{}],\n            vec![{}],\n            $lifecycle,\n        )\n    }}}};\n}}\n",
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_provide_{capability_macro_name} {{\n    ($provider:expr, $lifecycle:expr, $support:ident) => {{{{\n        let endpoint = ::std::rc::Rc::new($crate::{capability_name}Endpoint::new($provider));\n        $support::NativeModuleInstance::with_all_endpoints(\n            vec![{}],\n            vec![{}],\n            vec![{}],\n            $lifecycle,\n        )\n    }}}};\n}}\n",
         request_endpoint_value.unwrap_or_default(),
         stream_endpoint_value.unwrap_or_default(),
         event_endpoint_value.unwrap_or_default(),

@@ -4,12 +4,6 @@ use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
 use lenso_module_authoring::CapabilityClient;
-#[doc(hidden)]
-pub mod __lenso_native_support {
-    pub use lenso_kernel::{NativeEventEndpoint, NativeRequestEndpoint, NativeStreamEndpoint};
-    pub use lenso_native_adapter::NativeModuleInstance;
-}
-
 pub const CAPABILITY_ID: &str = "example.profile@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -413,10 +407,10 @@ impl<P: ProfileProvider> NativeRequestEndpoint for ProfileEndpoint<P> {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_native_provide_profile {
-    ($provider:expr, $lifecycle:expr) => {{
+    ($provider:expr, $lifecycle:expr, $support:ident) => {{
         let endpoint = ::std::rc::Rc::new($crate::ProfileEndpoint::new($provider));
-        $crate::__lenso_native_support::NativeModuleInstance::with_all_endpoints(
-            vec![endpoint.clone() as ::std::rc::Rc<dyn $crate::__lenso_native_support::NativeRequestEndpoint>],
+        $support::NativeModuleInstance::with_all_endpoints(
+            vec![endpoint.clone() as ::std::rc::Rc<dyn $support::NativeRequestEndpoint>],
             vec![],
             vec![],
             $lifecycle,

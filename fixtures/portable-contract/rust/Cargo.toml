@@ -10,7 +10,6 @@ build = "build.rs"
 futures.workspace = true
 lenso-kernel = "0.1.4"
 lenso-module-authoring = { path = "../../../crates/lenso-module-authoring", version = "0.1.0" }
-lenso-native-adapter = { git = "https://github.com/LioRael/lenso-runtime-rust.git", rev = "be4cadb5d6cfcc5dfac6a29b9c731e065d37f07d" }
 lenso-contract-runtime = { path = "../../../crates/lenso-contract-runtime", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
