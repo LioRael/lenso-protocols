@@ -170,6 +170,16 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     );
     assert!(!artifacts.rust.contains("ConversationRequestEndpoint"));
     assert!(artifacts.rust.contains("fn chat("));
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_provided_conversation")
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_native_provide_conversation")
+    );
     assert!(artifacts.typescript.contains("StreamEvent"));
     assert!(artifacts.typescript.contains(
         "export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;"
@@ -300,6 +310,11 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(artifacts.rust.contains("serde::Serialize"));
     assert!(artifacts.rust.contains("encode_round_trip_request"));
     assert!(artifacts.rust.contains("decode_round_trip_error"));
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_required_profile_client")
+    );
     assert!(
         artifacts
             .rust

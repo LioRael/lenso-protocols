@@ -11,6 +11,14 @@ pub const CROSS_LANE_TRANSFER: bool = false;
 pub const PROFILE_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const PROFILE_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_provided_profile { () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"corpus_round_trip\",\"round_trip\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":false}" }; }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_profile_client { () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+
 pub const CORPUS_ROUND_TRIP_OPERATION: &str = "corpus_round_trip";
 pub const ROUND_TRIP_OPERATION: &str = "round_trip";
 
@@ -394,6 +402,20 @@ impl<P: ProfileProvider> NativeRequestEndpoint for ProfileEndpoint<P> {
             _ => Box::pin(futures::future::ready(Err(RuntimeFailure::UnknownOperation { capability: CAPABILITY_ID, operation: operation.to_owned() }))),
         }
     }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_provide_profile {
+    ($provider:expr, $lifecycle:expr) => {{
+        let endpoint = ::std::rc::Rc::new($crate::ProfileEndpoint::new($provider));
+        ::lenso_native_adapter::NativeModuleInstance::with_all_endpoints(
+            vec![endpoint.clone() as ::std::rc::Rc<dyn ::lenso_kernel::NativeRequestEndpoint>],
+            vec![],
+            vec![],
+            $lifecycle,
+        )
+    }};
 }
 
 #[derive(Debug)]
