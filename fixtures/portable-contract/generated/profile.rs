@@ -407,9 +407,10 @@ impl<P: ProfileProvider> NativeRequestEndpoint for ProfileEndpoint<P> {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __lenso_native_provide_profile {
-    ($provider:expr, $lifecycle:expr, $support:ident) => {{
+    ($provider:expr, $lifecycle:expr, $support:path) => {{
+        use $support as __LensoNativeSupport;
         let endpoint = ::std::rc::Rc::new($crate::ProfileEndpoint::new($provider));
-        $support::NativeModuleInstance::with_all_endpoints(
+        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(
             vec![endpoint.clone() as ::std::rc::Rc<dyn $support::NativeRequestEndpoint>],
             vec![],
             vec![],

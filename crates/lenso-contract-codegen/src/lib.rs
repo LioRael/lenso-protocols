@@ -3055,7 +3055,7 @@ fn generate_rust(contract: &ContractIr) -> String {
         .then_some("endpoint as ::std::rc::Rc<dyn $support::NativeEventEndpoint>");
     writeln!(
         output,
-        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_provide_{capability_macro_name} {{\n    ($provider:expr, $lifecycle:expr, $support:ident) => {{{{\n        let endpoint = ::std::rc::Rc::new($crate::{capability_name}Endpoint::new($provider));\n        $support::NativeModuleInstance::with_all_endpoints(\n            vec![{}],\n            vec![{}],\n            vec![{}],\n            $lifecycle,\n        )\n    }}}};\n}}\n",
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_provide_{capability_macro_name} {{\n    ($provider:expr, $lifecycle:expr, $support:path) => {{{{\n        use $support as __LensoNativeSupport;\n        let endpoint = ::std::rc::Rc::new($crate::{capability_name}Endpoint::new($provider));\n        __LensoNativeSupport::NativeModuleInstance::with_all_endpoints(\n            vec![{}],\n            vec![{}],\n            vec![{}],\n            $lifecycle,\n        )\n    }}}};\n}}\n",
         request_endpoint_value.unwrap_or_default(),
         stream_endpoint_value.unwrap_or_default(),
         event_endpoint_value.unwrap_or_default(),
