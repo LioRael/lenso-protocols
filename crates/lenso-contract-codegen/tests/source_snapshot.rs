@@ -77,3 +77,40 @@ fn stream_source_snapshots_use_open_and_message_artifacts() {
     assert!(generated.rust.contains("NativeStreamSession"));
     assert!(generated.typescript.contains("StreamSession"));
 }
+
+#[test]
+fn schema_titles_preserve_authored_type_names_across_projections() {
+    let root = tempfile::tempdir().unwrap();
+    let descriptor = root.path().join("capability.json");
+    let mut snapshot = snapshot();
+    snapshot.operations[0].request_schema = json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CatalogRequest",
+        "type": "object",
+        "required": ["tools"],
+        "properties": {
+            "tools": {
+                "type": "array",
+                "items": {
+                    "title": "ToolDefinition",
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": { "name": { "type": "string" } },
+                    "additionalProperties": false
+                }
+            }
+        },
+        "additionalProperties": false
+    });
+
+    write_source_snapshot(&snapshot, &descriptor).unwrap();
+    let generated = generate(&descriptor).unwrap();
+    assert!(generated.rust.contains("pub struct CatalogRequest"));
+    assert!(generated.rust.contains("pub tools: Vec<ToolDefinition>"));
+    assert!(generated.rust.contains("pub struct ToolDefinition"));
+    assert!(
+        generated
+            .typescript
+            .contains("export interface ToolDefinition")
+    );
+}

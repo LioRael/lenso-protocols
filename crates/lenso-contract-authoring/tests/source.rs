@@ -59,6 +59,8 @@ fn annotated_trait_derives_identity_operations_values_and_errors() {
     let operation = &snapshot.operations[0];
     assert_eq!(operation.name, "ping");
     assert_eq!(operation.interaction, "request");
+    assert_eq!(operation.request_schema["title"], "PingRequest");
+    assert_eq!(operation.response_schema["title"], "PingResponse");
     assert_eq!(operation.request_schema["additionalProperties"], false);
     assert_eq!(
         operation.request_schema["properties"]["value"]["minLength"],
