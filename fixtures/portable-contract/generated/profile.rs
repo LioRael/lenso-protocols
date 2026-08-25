@@ -345,9 +345,67 @@ pub fn decode_round_trip_response(wire: &str) -> Result<RoundTripResponse, serde
 pub fn encode_round_trip_error(value: &RoundTripError) -> Result<String, serde_json::Error> { encode_portable_json(value) }
 pub fn decode_round_trip_error(wire: &str) -> Result<RoundTripError, serde_json::Error> { decode_portable_json(wire) }
 
+#[doc(hidden)]
+pub trait __LensoIntoProfileCorpusRoundTripResult {
+    fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure>;
+}
+impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, CorpusRoundTripError> {
+    fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, ProfileCorpusRoundTripInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(ProfileCorpusRoundTripInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(ProfileCorpusRoundTripInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
+#[doc(hidden)]
+pub trait __LensoIntoProfileRoundTripResult {
+    fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure>;
+}
+impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, RoundTripError> {
+    fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, ProfileRoundTripInvocationError> {
+    fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(ProfileRoundTripInvocationError::Domain(error)) => Ok(Err(error)),
+            Err(ProfileRoundTripInvocationError::Runtime(error)) => Err(error),
+        }
+    }
+}
+
 pub trait ProfileProvider: fmt::Debug + 'static {
     fn corpus_round_trip(&self, context: InvocationContext, request: CorpusRoundTripRequest) -> NativeRequestFuture<ProfileCorpusRoundTrip>;
     fn round_trip(&self, context: InvocationContext, request: RoundTripRequest) -> NativeRequestFuture<ProfileRoundTrip>;
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_profile {
+    ($module:ty, $support:path) => {
+        use $support as __LensoNativeSupportProfile;
+        impl $crate::ProfileProvider for $module {
+        fn corpus_round_trip(&self, context: __LensoNativeSupportProfile::InvocationContext, request: $crate::CorpusRoundTripRequest) -> __LensoNativeSupportProfile::NativeRequestFuture<$crate::ProfileCorpusRoundTrip> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::corpus_round_trip(&module, context, request).await;
+                $crate::__LensoIntoProfileCorpusRoundTripResult::__lenso_into_result(result)
+            })
+        }
+        fn round_trip(&self, context: __LensoNativeSupportProfile::InvocationContext, request: $crate::RoundTripRequest) -> __LensoNativeSupportProfile::NativeRequestFuture<$crate::ProfileRoundTrip> {
+            let module = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let result = <$module>::round_trip(&module, context, request).await;
+                $crate::__LensoIntoProfileRoundTripResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
 }
 
 #[derive(Debug)]
