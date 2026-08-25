@@ -748,6 +748,7 @@ fn resolve_refs(
                         detail: "a `$ref` target must resolve to an object Schema".to_owned(),
                     }
                 })?;
+                restore_reference_type_name(&mut merged, reference);
                 for (key, child) in object {
                     if key != "$ref" {
                         merged.insert(
@@ -773,6 +774,23 @@ fn resolve_refs(
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
         _ => Ok(value.clone()),
+    }
+}
+
+fn reference_definition_name(reference: &str) -> Option<String> {
+    let (_, fragment) = reference.rsplit_once('#')?;
+    let name = fragment.strip_prefix("/$defs/")?;
+    if name.is_empty() || name.contains('/') {
+        return None;
+    }
+    Some(name.replace("~1", "/").replace("~0", "~"))
+}
+
+fn restore_reference_type_name(schema: &mut Map<String, Value>, reference: &str) {
+    if schema.get("title").is_none()
+        && let Some(name) = reference_definition_name(reference)
+    {
+        schema.insert("title".to_owned(), Value::String(name));
     }
 }
 
