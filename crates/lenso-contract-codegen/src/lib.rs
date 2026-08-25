@@ -2919,6 +2919,7 @@ fn generate_rust(contract: &ContractIr) -> String {
         kernel_imports.join(", ")
     )
     .expect("writing to a String cannot fail");
+    output.push_str("use lenso_module::CapabilityClient;\n");
     writeln!(
         output,
         "pub const CAPABILITY_ID: &str = {};",
@@ -3022,11 +3023,11 @@ fn generate_rust(contract: &ContractIr) -> String {
     };
     write!(
         output,
-        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n\n{}\n}}\n\n",
+        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n}}\n\n",
         client_fields.join("\n"),
         new_method,
-        client_initializers.join("\n"),
-        client_methods.join("\n\n")
+        client_methods.join("\n\n"),
+        client_initializers.join("\n")
     )
     .expect("writing to a String cannot fail");
     for error in invocation_errors {

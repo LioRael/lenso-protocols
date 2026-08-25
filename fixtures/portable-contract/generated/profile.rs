@@ -3,6 +3,7 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, ModuleDependencies, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, RequestCapability, RuntimeFailure};
 
+use lenso_module::CapabilityClient;
 pub const CAPABILITY_ID: &str = "example.profile@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
 pub const PORTABLE: bool = true;
@@ -402,10 +403,7 @@ pub struct ProfileClient {
 }
 impl ProfileClient {
     pub fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
-        Ok(Self {
-            corpus_round_trip: dependencies.one::<ProfileCorpusRoundTrip>()?,
-            round_trip: dependencies.one::<ProfileRoundTrip>()?,
-        })
+        <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
     pub async fn corpus_round_trip(&self, request: CorpusRoundTripRequest) -> Result<CorpusRoundTripResponse, ProfileCorpusRoundTripInvocationError> {
@@ -430,6 +428,18 @@ impl ProfileClient {
         self.round_trip.invoke_with_context(ROUND_TRIP_OPERATION, context, request).await
             .map_err(ProfileRoundTripInvocationError::Runtime)?
             .map_err(ProfileRoundTripInvocationError::Domain)
+    }
+}
+
+impl CapabilityClient for ProfileClient {
+    const CAPABILITY_ID: &'static str = CAPABILITY_ID;
+    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;
+
+    fn from_dependencies(dependencies: &ModuleDependencies) -> Result<Self, RuntimeFailure> {
+        Ok(Self {
+            corpus_round_trip: dependencies.one::<ProfileCorpusRoundTrip>()?,
+            round_trip: dependencies.one::<ProfileRoundTrip>()?,
+        })
     }
 }
 
