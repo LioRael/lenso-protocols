@@ -352,6 +352,15 @@ pub trait __LensoIntoProfileCorpusRoundTripResult {
 impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, CorpusRoundTripError> {
     fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> { Ok(self) }
 }
+impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, lenso_module_authoring::ModuleError<CorpusRoundTripError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
+}
 impl __LensoIntoProfileCorpusRoundTripResult for Result<CorpusRoundTripResponse, ProfileCorpusRoundTripInvocationError> {
     fn __lenso_into_result(self) -> Result<Result<CorpusRoundTripResponse, CorpusRoundTripError>, RuntimeFailure> {
         match self {
@@ -368,6 +377,15 @@ pub trait __LensoIntoProfileRoundTripResult {
 }
 impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, RoundTripError> {
     fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> { Ok(self) }
+}
+impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, lenso_module_authoring::ModuleError<RoundTripError, RuntimeFailure>> {
+    fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {
+        match self {
+            Ok(value) => Ok(Ok(value)),
+            Err(lenso_module_authoring::ModuleError::Domain(error)) => Ok(Err(error)),
+            Err(lenso_module_authoring::ModuleError::Runtime(error)) => Err(error),
+        }
+    }
 }
 impl __LensoIntoProfileRoundTripResult for Result<RoundTripResponse, ProfileRoundTripInvocationError> {
     fn __lenso_into_result(self) -> Result<Result<RoundTripResponse, RoundTripError>, RuntimeFailure> {

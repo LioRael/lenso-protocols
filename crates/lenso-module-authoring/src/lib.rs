@@ -2,6 +2,42 @@
 
 use std::{cell::OnceCell, ops::Deref, rc::Rc};
 
+/// One Module operation failure with an explicit Domain/Runtime split.
+///
+/// Ordinary operations can return `Result<T, DomainError>` directly. Use this
+/// type only when Module code must deliberately surface an Adapter-specific
+/// runtime failure in addition to its Capability-defined Domain Errors.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ModuleError<DomainError, RuntimeError> {
+    /// An expected Capability-defined business rejection.
+    Domain(DomainError),
+    /// An infrastructure or execution failure outside the Capability contract.
+    Runtime(RuntimeError),
+}
+
+impl<DomainError, RuntimeError> ModuleError<DomainError, RuntimeError> {
+    /// Creates a Capability-defined Domain Error.
+    pub const fn domain(error: DomainError) -> Self {
+        Self::Domain(error)
+    }
+
+    /// Creates an Adapter-specific Runtime Error.
+    pub const fn runtime(error: RuntimeError) -> Self {
+        Self::Runtime(error)
+    }
+
+    /// Maps the Domain Error while preserving the Runtime Error.
+    pub fn map_domain<Other>(
+        self,
+        map: impl FnOnce(DomainError) -> Other,
+    ) -> ModuleError<Other, RuntimeError> {
+        match self {
+            Self::Domain(error) => ModuleError::Domain(map(error)),
+            Self::Runtime(error) => ModuleError::Runtime(error),
+        }
+    }
+}
+
 /// A generated, strongly typed client for one required Capability.
 ///
 /// Capability binding generators implement this trait for their client type so
@@ -98,7 +134,7 @@ impl<C: CapabilityClient> Deref for Port<C> {
 
 /// Common imports for a Module authoring frontend.
 pub mod prelude {
-    pub use crate::{CapabilityClient, Port};
+    pub use crate::{CapabilityClient, ModuleError, Port};
 }
 
 #[cfg(test)]
@@ -141,5 +177,14 @@ mod tests {
         assert!(module_clone.is_connected());
         assert_eq!(module_clone.0, 42);
         assert_eq!(port.connect(&()), Err(ExampleError::AlreadyConnected));
+    }
+
+    #[test]
+    fn module_error_preserves_runtime_failures_while_mapping_domain_errors() {
+        let domain = ModuleError::<_, &str>::domain("missing").map_domain(str::len);
+        assert_eq!(domain, ModuleError::Domain(7));
+
+        let runtime = ModuleError::<&str, _>::runtime("cancelled").map_domain(str::len);
+        assert_eq!(runtime, ModuleError::Runtime("cancelled"));
     }
 }
