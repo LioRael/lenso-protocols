@@ -42,12 +42,19 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
     );
     assert!(projection.source.contains("&[ECHO_OPERATION]"));
     assert!(projection.source.contains("fn invoke_host_request(&self"));
-    assert!(projection.source.contains("dependency.typed::<Echo>()?"));
+    assert!(
+        projection
+            .source
+            .contains("dependency.typed::<Greeting>()?")
+    );
     assert!(
         projection
             .source
             .contains("invoke_with_context(ECHO_OPERATION, context, request)")
     );
+    assert!(projection.source.contains(
+        "fn open_host_stream(&self, _dependency: lenso_kernel::ModuleStreamDependencyHandle"
+    ));
     assert!(
         projection
             .source
@@ -66,6 +73,23 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
 }
 
 #[test]
+fn multi_operation_runtime_codec_uses_generated_composite_markers() {
+    let projection = generate_projection(Path::new(FIXTURE), ProjectionLanguage::RustRuntime)
+        .expect("portable multi-operation Descriptor should project to a runtime codec");
+
+    assert!(
+        projection
+            .source
+            .contains("dependency.typed::<ProfileRoundTrip>()?")
+    );
+    assert!(
+        projection
+            .source
+            .contains("dependency.typed::<ProfileCorpusRoundTrip>()?")
+    );
+}
+
+#[test]
 fn stream_descriptor_generates_exact_runtime_codec_projection() {
     let projection =
         generate_projection(Path::new(STREAM_FIXTURE), ProjectionLanguage::RustRuntime)
@@ -74,11 +98,15 @@ fn stream_descriptor_generates_exact_runtime_codec_projection() {
     assert!(projection.source.contains("stream_operations(&self)"));
     assert!(projection.source.contains("&[CHAT_OPERATION]"));
     assert!(projection.source.contains("fn open_host_stream(&self"));
-    assert!(projection.source.contains("dependency.typed::<Chat>()?"));
     assert!(
         projection
             .source
-            .contains("lenso_runtime_codec::json_host_stream::<Chat>")
+            .contains("dependency.typed::<Conversation>()?")
+    );
+    assert!(
+        projection
+            .source
+            .contains("lenso_runtime_codec::json_host_stream::<Conversation>")
     );
     assert!(
         projection
