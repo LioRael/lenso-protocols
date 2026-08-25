@@ -180,6 +180,17 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
             .rust
             .contains("macro_rules! __lenso_native_provide_conversation")
     );
+    assert!(artifacts.rust.contains("pub mod __lenso_native_support"));
+    assert!(
+        artifacts
+            .rust
+            .contains("$crate::__lenso_native_support::NativeModuleInstance::with_all_endpoints")
+    );
+    assert!(
+        !artifacts
+            .rust
+            .contains("::lenso_native_adapter::NativeModuleInstance::with_all_endpoints")
+    );
     assert!(artifacts.typescript.contains("StreamEvent"));
     assert!(artifacts.typescript.contains(
         "export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;"
