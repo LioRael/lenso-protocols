@@ -183,6 +183,16 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
+            .contains("macro_rules! __lenso_native_endpoints_conversation")
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("$crate::__lenso_native_endpoints_conversation!($provider, $support)")
+    );
+    assert!(
+        artifacts
+            .rust
             .contains("__LensoNativeSupport::NativeModuleInstance::with_all_endpoints")
     );
     assert!(!artifacts.rust.contains("pub use lenso_native_adapter"));
@@ -212,6 +222,11 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
     assert!(artifacts.rust.contains("NativeEventEndpoint"));
     assert!(artifacts.rust.contains("NativeEventHandle"));
     assert!(artifacts.rust.contains("EventPublishResult"));
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_native_endpoints_notifications")
+    );
     assert!(artifacts.rust.contains(
         "fn notify(&self, context: InvocationContext, event: NotifyRequest) -> LocalBoxFuture<'static, Result<(), RuntimeFailure>>;"
     ));
