@@ -1,6 +1,6 @@
 [package]
 name = "lenso-contract-codegen"
-version = "0.6.2"
+version = "0.6.3"
 edition.workspace = true
 license.workspace = true
 publish = true
@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Code generator for portable Lenso Capability contracts."
 
 [dependencies]
-lenso-contract-authoring = { version = "0.1.0", path = "../lenso-contract-authoring" }
+lenso-contract-authoring = { version = "0.1.1", path = "../lenso-contract-authoring" }
 serde_json.workspace = true
 semver.workspace = true
 
