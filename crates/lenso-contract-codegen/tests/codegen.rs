@@ -180,12 +180,12 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
             .rust
             .contains("macro_rules! __lenso_native_provide_conversation")
     );
-    assert!(artifacts.rust.contains("pub mod __lenso_native_support"));
     assert!(
         artifacts
             .rust
-            .contains("$crate::__lenso_native_support::NativeModuleInstance::with_all_endpoints")
+            .contains("$support::NativeModuleInstance::with_all_endpoints")
     );
+    assert!(!artifacts.rust.contains("pub use lenso_native_adapter"));
     assert!(
         !artifacts
             .rust
