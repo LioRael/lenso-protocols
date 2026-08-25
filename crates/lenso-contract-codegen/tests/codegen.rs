@@ -212,6 +212,20 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
     assert!(artifacts.rust.contains("NativeEventEndpoint"));
     assert!(artifacts.rust.contains("NativeEventHandle"));
     assert!(artifacts.rust.contains("EventPublishResult"));
+    assert!(artifacts.rust.contains(
+        "fn notify(&self, context: InvocationContext, event: NotifyRequest) -> LocalBoxFuture<'static, Result<(), RuntimeFailure>>;"
+    ));
+    assert!(
+        artifacts.rust.contains(
+            "impl __LensoIntoNotificationsNotifyEventResult for Result<(), RuntimeFailure>"
+        )
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("let result = <$module>::notify(&module, context, event).await;")
+    );
+    assert!(!artifacts.rust.contains("provider.notify(context, *event);"));
     assert!(
         artifacts
             .rust
