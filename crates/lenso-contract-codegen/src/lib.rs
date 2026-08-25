@@ -144,14 +144,22 @@ fn type_ir_non_null(schema: &Value) -> TypeIr {
                 properties.sort_unstable_by_key(|(name, _)| *name);
                 let fields = properties
                     .into_iter()
-                    .map(|(name, schema)| FieldIr {
-                        name: name.clone(),
-                        required: required.contains(name),
-                        sensitive: schema
-                            .get("x-lenso-sensitive")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                        ty: type_ir_from_schema(schema),
+                    .map(|(name, schema)| {
+                        let ty = type_ir_from_schema(schema);
+                        let ty = if name.ends_with("_json") && ty == TypeIr::String {
+                            TypeIr::RawJson
+                        } else {
+                            ty
+                        };
+                        FieldIr {
+                            name: name.clone(),
+                            required: required.contains(name),
+                            sensitive: schema
+                                .get("x-lenso-sensitive")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false),
+                            ty,
+                        }
                     })
                     .collect();
                 let additional = match object.get("additionalProperties") {
@@ -2573,6 +2581,7 @@ impl RustTypes {
         match ty {
             TypeIr::Any => "serde_json::Value".to_owned(),
             TypeIr::String => "String".to_owned(),
+            TypeIr::RawJson => "RawJson".to_owned(),
             TypeIr::Enum { name, values } => {
                 self.enum_type(name.as_deref().unwrap_or(nested_name), values)
             }
@@ -2674,7 +2683,7 @@ impl TypeScriptTypes {
     fn type_for_non_null(&mut self, ty: &TypeIr, nested_name: &str) -> String {
         match ty {
             TypeIr::Any => "unknown".to_owned(),
-            TypeIr::String => "string".to_owned(),
+            TypeIr::String | TypeIr::RawJson => "string".to_owned(),
             TypeIr::Int64 => "Int64".to_owned(),
             TypeIr::Uint64 => "Uint64".to_owned(),
             TypeIr::Bytes => "Bytes".to_owned(),
@@ -3231,6 +3240,9 @@ fn collect_rust_runtime_types(ty: &TypeIr, types: &mut BTreeSet<&'static str>) {
         }
         TypeIr::Duration => {
             types.insert("Duration");
+        }
+        TypeIr::RawJson => {
+            types.insert("RawJson");
         }
         TypeIr::Array(item) | TypeIr::Nullable(item) => {
             collect_rust_runtime_types(item, types);
