@@ -90,6 +90,34 @@ impl TryFrom<String> for RawJson {
     }
 }
 
+impl TryFrom<&str> for RawJson {
+    type Error = serde_json::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl AsRef<str> for RawJson {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::ops::Deref for RawJson {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for RawJson {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 impl Serialize for RawJson {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -399,6 +427,8 @@ mod tests {
         );
         assert!(RawJson::new("not JSON").is_err());
         assert!(RawJson::new("9007199254740992").is_err());
+        assert_eq!(raw.as_ref(), r#"{"ready":true}"#);
+        assert_eq!(raw.to_string(), r#"{"ready":true}"#);
     }
 
     #[test]
