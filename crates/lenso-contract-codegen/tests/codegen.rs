@@ -183,7 +183,7 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
-            .contains("$support::NativeModuleInstance::with_all_endpoints")
+            .contains("__LensoNativeSupport::NativeModuleInstance::with_all_endpoints")
     );
     assert!(!artifacts.rust.contains("pub use lenso_native_adapter"));
     assert!(
