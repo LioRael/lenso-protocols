@@ -307,6 +307,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lenso-event-contract-fixture"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "lenso-contract-codegen",
+ "lenso-contract-runtime",
+ "lenso-kernel",
+ "lenso-module-authoring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lenso-kernel"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

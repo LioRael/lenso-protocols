@@ -2854,15 +2854,19 @@ fn generate_rust(contract: &ContractIr) -> String {
         } else {
             event_operation_rows.push(format!("        {operation_const}_OPERATION,\n"));
             provider_methods.push(format!(
-                "    fn {}(&self, context: InvocationContext, event: {request_type});",
+                "    fn {}(&self, context: InvocationContext, event: {request_type}) -> LocalBoxFuture<'static, Result<(), RuntimeFailure>>;",
                 rust_field_name(&operation.name)
             ));
             let field = rust_field_name(&operation.name);
+            let conversion = format!("__LensoInto{capability_name}{operation_name}EventResult");
+            provider_result_conversions.push(format!(
+                "#[doc(hidden)]\npub trait {conversion} {{\n    fn __lenso_into_result(self) -> Result<(), RuntimeFailure>;\n}}\nimpl {conversion} for () {{\n    fn __lenso_into_result(self) -> Result<(), RuntimeFailure> {{ Ok(()) }}\n}}\nimpl {conversion} for Result<(), RuntimeFailure> {{\n    fn __lenso_into_result(self) -> Result<(), RuntimeFailure> {{ self }}\n}}\n"
+            ));
             provider_lowering_methods.push(format!(
-                "        fn {field}(&self, context: {native_support_name}::InvocationContext, event: $crate::{request_type}) {{\n            <$module>::{field}(self, context, event);\n        }}"
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, event: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<(), {native_support_name}::RuntimeFailure>> {{\n            let module = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$module>::{field}(&module, context, event).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
             ));
             event_endpoint_arms.push(format!(
-                "            {operation_const}_OPERATION => {{\n                let Ok(event) = event.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let provider = Rc::clone(&self.provider);\n                Box::pin(async move {{\n                    provider.{}(context, *event);\n                    Ok(())\n                }})\n            }}",
+                "            {operation_const}_OPERATION => {{\n                let Ok(event) = event.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                Rc::clone(&self.provider).{}(context, *event)\n            }}",
                 rust_field_name(&operation.name),
             ));
             let field = rust_field_name(&operation.name);
