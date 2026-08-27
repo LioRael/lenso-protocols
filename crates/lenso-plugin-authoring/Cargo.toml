@@ -1,11 +1,11 @@
 [package]
-name = "lenso-module-authoring"
+name = "lenso-plugin-authoring"
 version = "0.1.1"
 edition.workspace = true
 license.workspace = true
 publish = true
 repository.workspace = true
-description = "Runtime-neutral authoring primitives for strongly typed Lenso Modules."
+description = "Runtime-neutral authoring primitives for strongly typed Lenso Plugins."
 readme = "README.md"
 
 [lints]

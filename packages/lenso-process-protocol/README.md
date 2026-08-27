@@ -5,7 +5,7 @@ conformance helpers for `lenso-process-jsonrpc-http-v1`.
 
 Execution Adapters and child SDKs use this package at their wire boundary. It
 does not spawn processes, open HTTP listeners, generate random secrets, perform
-HMAC, interpret Capability payloads, or own Module behavior.
+HMAC, interpret Capability payloads, or own Plugin behavior.
 
 The published `schemas/process-protocol-v1.schema.json` describes every V1
 request and successful-response envelope. Runtime validators additionally

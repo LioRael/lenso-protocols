@@ -183,7 +183,7 @@ pub struct CapabilityDescriptor {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutboundBindingDescriptor {
-    /// Stable binding identity within the Module Instance.
+    /// Stable binding identity within the Plugin Instance.
     pub binding_id: String,
     /// Required Capability identity.
     pub capability_id: String,
@@ -191,7 +191,7 @@ pub struct OutboundBindingDescriptor {
     pub descriptor_version: String,
     /// Canonical Descriptor digest.
     pub descriptor_digest: String,
-    /// Explicit provider Module Instance key.
+    /// Explicit provider Plugin Instance key.
     pub provider_instance: String,
 }
 
@@ -203,10 +203,10 @@ pub struct HandshakeIdentity {
     pub protocol_profile: String,
     /// Exact portable value profile.
     pub value_profile: String,
-    /// App-local Module Instance key.
-    pub module_instance: String,
-    /// Canonical decimal Module generation.
-    pub module_generation: String,
+    /// App-local Plugin Instance key.
+    pub plugin_instance: String,
+    /// Canonical decimal Plugin generation.
+    pub plugin_generation: String,
     /// Exact App Generation Spec digest.
     pub generation_spec_digest: String,
     /// Exact executable Artifact digest.
@@ -287,7 +287,7 @@ pub struct RequestParams {
     pub operation: String,
     /// Exact request interaction marker.
     pub interaction: InteractionKind,
-    /// Host-established caller Module Instance, or `null` for host ingress.
+    /// Host-established caller Plugin Instance, or `null` for host ingress.
     pub caller_instance: Option<String>,
     /// Relative remaining budget as decimal nanoseconds, or `null` for none.
     pub remaining_timeout_nanos: Option<String>,
@@ -328,8 +328,8 @@ pub enum ProcessOutcome {
 pub enum ChildRuntimeFailure {
     /// The child cannot admit this operation within its declared bound.
     ResourceExhausted { operation: String },
-    /// The Module generation is no longer trustworthy and must be retired.
-    ModuleFailure { detail: String },
+    /// The Plugin generation is no longer trustworthy and must be retired.
+    PluginFailure { detail: String },
 }
 
 /// Idempotent cancel params.
@@ -417,8 +417,8 @@ impl HandshakeIdentity {
         if self.value_profile != VALUE_PROFILE {
             return Err(ProtocolError::new("unsupported portable value profile"));
         }
-        validate_token("module_instance", &self.module_instance)?;
-        validate_decimal("module_generation", &self.module_generation)?;
+        validate_token("plugin_instance", &self.plugin_instance)?;
+        validate_decimal("plugin_generation", &self.plugin_generation)?;
         validate_digest("generation_spec_digest", &self.generation_spec_digest)?;
         validate_digest("artifact_digest", &self.artifact_digest)?;
         validate_digest(
@@ -549,10 +549,10 @@ impl RequestResult {
                 ChildRuntimeFailure::ResourceExhausted { operation } => {
                     validate_token("operation", operation)?;
                 }
-                ChildRuntimeFailure::ModuleFailure { detail } => {
+                ChildRuntimeFailure::PluginFailure { detail } => {
                     if detail.is_empty() || detail.len() > 1_024 {
                         return Err(ProtocolError::new(
-                            "Module Failure detail must contain 1..=1024 bytes",
+                            "Plugin Failure detail must contain 1..=1024 bytes",
                         ));
                     }
                 }

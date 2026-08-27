@@ -25,7 +25,7 @@ impl InherentProfile {
         _request: RoundTripRequest,
     ) -> Result<
         RoundTripResponse,
-        lenso_module_authoring::ModuleError<RoundTripError, RuntimeFailure>,
+        lenso_plugin_authoring::PluginError<RoundTripError, RuntimeFailure>,
     > {
         todo!("compile-time runtime-failure lowering fixture")
     }
