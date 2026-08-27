@@ -1,21 +1,21 @@
-//! Runtime-neutral authoring primitives for strongly typed Lenso Modules.
+//! Runtime-neutral authoring primitives for strongly typed Lenso Plugins.
 
 use std::{cell::OnceCell, ops::Deref, rc::Rc};
 
-/// One Module operation failure with an explicit Domain/Runtime split.
+/// One Plugin operation failure with an explicit Domain/Runtime split.
 ///
 /// Ordinary operations can return `Result<T, DomainError>` directly. Use this
-/// type only when Module code must deliberately surface an Adapter-specific
+/// type only when Plugin code must deliberately surface an Adapter-specific
 /// runtime failure in addition to its Capability-defined Domain Errors.
 #[derive(Clone, Debug, PartialEq)]
-pub enum ModuleError<DomainError, RuntimeError> {
+pub enum PluginError<DomainError, RuntimeError> {
     /// An expected Capability-defined business rejection.
     Domain(DomainError),
     /// An infrastructure or execution failure outside the Capability contract.
     Runtime(RuntimeError),
 }
 
-impl<DomainError, RuntimeError> ModuleError<DomainError, RuntimeError> {
+impl<DomainError, RuntimeError> PluginError<DomainError, RuntimeError> {
     /// Creates a Capability-defined Domain Error.
     pub const fn domain(error: DomainError) -> Self {
         Self::Domain(error)
@@ -30,10 +30,10 @@ impl<DomainError, RuntimeError> ModuleError<DomainError, RuntimeError> {
     pub fn map_domain<Other>(
         self,
         map: impl FnOnce(DomainError) -> Other,
-    ) -> ModuleError<Other, RuntimeError> {
+    ) -> PluginError<Other, RuntimeError> {
         match self {
-            Self::Domain(error) => ModuleError::Domain(map(error)),
-            Self::Runtime(error) => ModuleError::Runtime(error),
+            Self::Domain(error) => PluginError::Domain(map(error)),
+            Self::Runtime(error) => PluginError::Runtime(error),
         }
     }
 }
@@ -41,7 +41,7 @@ impl<DomainError, RuntimeError> ModuleError<DomainError, RuntimeError> {
 /// A generated, strongly typed client for one required Capability.
 ///
 /// Capability binding generators implement this trait for their client type so
-/// Module authoring frontends can connect typed Ports without knowing the
+/// Plugin authoring frontends can connect typed Ports without knowing the
 /// Capability's operation kinds or handle layout. Implementations must use only
 /// the supplied Plan-owned dependencies; they must not perform discovery.
 pub trait CapabilityClient: Sized + 'static {
@@ -55,7 +55,7 @@ pub trait CapabilityClient: Sized + 'static {
     /// Exact Descriptor version understood by this generated client.
     const DESCRIPTOR_VERSION: &'static str;
 
-    /// Connects this client to one Module Instance's resolved dependencies.
+    /// Connects this client to one Plugin Instance's resolved dependencies.
     fn from_dependencies(dependencies: &Self::Dependencies) -> Result<Self, Self::Error>;
 
     /// Creates the adapter failure for an invalid second connection attempt.
@@ -109,11 +109,11 @@ impl<C> Deref for BoundCapabilityClient<C> {
     }
 }
 
-/// A typed, lifecycle-bound Capability requirement declared by a Module.
+/// A typed, lifecycle-bound Capability requirement declared by a Plugin.
 ///
-/// Generated Module glue connects the Port during activation. Module behavior
+/// Generated Plugin glue connects the Port during activation. Plugin behavior
 /// can then call the generated Capability client directly through `Deref`.
-/// A fresh Module generation owns fresh Ports; reconnecting one Port is an
+/// A fresh Plugin generation owns fresh Ports; reconnecting one Port is an
 /// invalid lifecycle transition.
 pub struct Port<C: CapabilityClient> {
     client: Rc<OnceCell<C>>,
@@ -128,7 +128,7 @@ impl<C: CapabilityClient> Port<C> {
         }
     }
 
-    /// Connects the Port from this Module Instance's resolved dependencies.
+    /// Connects the Port from this Plugin Instance's resolved dependencies.
     pub fn connect(&self, dependencies: &C::Dependencies) -> Result<(), C::Error> {
         let client = C::from_dependencies(dependencies)?;
         self.client.set(client).map_err(|_| C::already_connected())
@@ -172,16 +172,16 @@ impl<C: CapabilityClient> Deref for Port<C> {
     fn deref(&self) -> &Self::Target {
         self.client.get().unwrap_or_else(|| {
             panic!(
-                "Capability Port {} was used before Module activation",
+                "Capability Port {} was used before Plugin activation",
                 C::CAPABILITY_ID
             )
         })
     }
 }
 
-/// A typed, lifecycle-bound `many` Capability requirement declared by a Module.
+/// A typed, lifecycle-bound `many` Capability requirement declared by a Plugin.
 ///
-/// Generated Module glue connects one client per explicitly bound provider during
+/// Generated Plugin glue connects one client per explicitly bound provider during
 /// activation. Entries retain their provider Instance keys and resolved order.
 pub struct ManyPort<C: CapabilityClientMany> {
     clients: Rc<OnceCell<Vec<BoundCapabilityClient<C>>>>,
@@ -196,7 +196,7 @@ impl<C: CapabilityClientMany> ManyPort<C> {
         }
     }
 
-    /// Connects the Port from this Module Instance's resolved dependencies.
+    /// Connects the Port from this Plugin Instance's resolved dependencies.
     pub fn connect(&self, dependencies: &C::Dependencies) -> Result<(), C::Error> {
         let clients = C::many_from_dependencies(dependencies)?;
         self.clients
@@ -244,7 +244,7 @@ impl<C: CapabilityClientMany> Deref for ManyPort<C> {
         self.clients.get().map_or_else(
             || {
                 panic!(
-                    "Capability ManyPort {} was used before Module activation",
+                    "Capability ManyPort {} was used before Plugin activation",
                     C::CAPABILITY_ID
                 )
             },
@@ -253,10 +253,10 @@ impl<C: CapabilityClientMany> Deref for ManyPort<C> {
     }
 }
 
-/// Common imports for a Module authoring frontend.
+/// Common imports for a Plugin authoring frontend.
 pub mod prelude {
     pub use crate::{
-        BoundCapabilityClient, CapabilityClient, CapabilityClientMany, ManyPort, ModuleError, Port,
+        BoundCapabilityClient, CapabilityClient, CapabilityClientMany, ManyPort, PluginError, Port,
     };
 }
 
@@ -300,42 +300,42 @@ mod tests {
     }
 
     #[test]
-    fn port_connects_once_and_is_shared_by_module_clones() {
+    fn port_connects_once_and_is_shared_by_plugin_clones() {
         let port = Port::<ExampleClient>::new();
-        let module_clone = port.clone();
+        let plugin_clone = port.clone();
         assert!(!port.is_connected());
 
         port.connect(&())
             .expect("the generated client should connect");
 
-        assert!(module_clone.is_connected());
-        assert_eq!(module_clone.0, 42);
+        assert!(plugin_clone.is_connected());
+        assert_eq!(plugin_clone.0, 42);
         assert_eq!(port.connect(&()), Err(ExampleError::AlreadyConnected));
     }
 
     #[test]
     fn many_port_preserves_provider_identity_and_resolved_order() {
         let port = ManyPort::<ExampleClient>::new();
-        let module_clone = port.clone();
+        let plugin_clone = port.clone();
         assert!(!port.is_connected());
 
         port.connect(&())
             .expect("the generated clients should connect");
 
-        assert!(module_clone.is_connected());
-        assert_eq!(module_clone[0].provider_instance(), "alpha");
-        assert_eq!(module_clone[0].client().0, 1);
-        assert_eq!(module_clone[1].provider_instance(), "beta");
-        assert_eq!(module_clone[1].client().0, 2);
+        assert!(plugin_clone.is_connected());
+        assert_eq!(plugin_clone[0].provider_instance(), "alpha");
+        assert_eq!(plugin_clone[0].client().0, 1);
+        assert_eq!(plugin_clone[1].provider_instance(), "beta");
+        assert_eq!(plugin_clone[1].client().0, 2);
         assert_eq!(port.connect(&()), Err(ExampleError::AlreadyConnected));
     }
 
     #[test]
-    fn module_error_preserves_runtime_failures_while_mapping_domain_errors() {
-        let domain = ModuleError::<_, &str>::domain("missing").map_domain(str::len);
-        assert_eq!(domain, ModuleError::Domain(7));
+    fn plugin_error_preserves_runtime_failures_while_mapping_domain_errors() {
+        let domain = PluginError::<_, &str>::domain("missing").map_domain(str::len);
+        assert_eq!(domain, PluginError::Domain(7));
 
-        let runtime = ModuleError::<&str, _>::runtime("cancelled").map_domain(str::len);
-        assert_eq!(runtime, ModuleError::Runtime("cancelled"));
+        let runtime = PluginError::<&str, _>::runtime("cancelled").map_domain(str::len);
+        assert_eq!(runtime, PluginError::Runtime("cancelled"));
     }
 }

@@ -12,8 +12,8 @@ fn identity() -> HandshakeIdentity {
     HandshakeIdentity {
         protocol_profile: PROCESS_PROFILE.to_owned(),
         value_profile: VALUE_PROFILE.to_owned(),
-        module_instance: "tool-provider".to_owned(),
-        module_generation: "7".to_owned(),
+        plugin_instance: "tool-provider".to_owned(),
+        plugin_generation: "7".to_owned(),
         generation_spec_digest: digest('a'),
         artifact_digest: digest('b'),
         effective_host_grant_set_digest: digest('c'),

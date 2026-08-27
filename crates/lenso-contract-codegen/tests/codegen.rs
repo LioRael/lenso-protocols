@@ -62,7 +62,7 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
             .contains("invoke_with_context(ECHO_OPERATION, context, request)")
     );
     assert!(projection.source.contains(
-        "fn open_host_stream(&self, _dependency: lenso_kernel::ModuleStreamDependencyHandle"
+        "fn open_host_stream(&self, _dependency: lenso_kernel::PluginStreamDependencyHandle"
     ));
     assert!(
         projection
@@ -312,14 +312,14 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
-            .contains("__LensoNativeSupport::NativeModuleInstance::with_all_endpoints")
+            .contains("__LensoNativeSupport::NativePluginInstance::with_all_endpoints")
     );
     assert!(!artifacts.rust.contains("pub use lenso_native_adapter"));
     assert!(!artifacts.rust.contains("dyn $support::"));
     assert!(
         !artifacts
             .rust
-            .contains("::lenso_native_adapter::NativeModuleInstance::with_all_endpoints")
+            .contains("::lenso_native_adapter::NativePluginInstance::with_all_endpoints")
     );
     assert!(artifacts.typescript.contains("StreamEvent"));
     assert!(artifacts.typescript.contains(
@@ -357,7 +357,7 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
     assert!(
         artifacts
             .rust
-            .contains("let result = <$module>::notify(&module, context, event).await;")
+            .contains("let result = <$plugin>::notify(&plugin, context, event).await;")
     );
     assert!(!artifacts.rust.contains("provider.notify(context, *event);"));
     assert!(
@@ -693,7 +693,7 @@ fn json_suffixed_string_fields_generate_validated_raw_json_in_rust_only() {
 }
 
 #[test]
-fn generation_is_deterministic_and_metadata_does_not_depend_on_module_version() {
+fn generation_is_deterministic_and_metadata_does_not_depend_on_plugin_version() {
     let first = generate(Path::new(FIXTURE)).expect("first generation should succeed");
     let second = generate(Path::new(FIXTURE)).expect("second generation should succeed");
 

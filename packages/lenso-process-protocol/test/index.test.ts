@@ -20,8 +20,8 @@ function identity(): HandshakeIdentity {
   return {
     protocol_profile: PROCESS_PROFILE,
     value_profile: VALUE_PROFILE,
-    module_instance: "tool-provider",
-    module_generation: "7",
+    plugin_instance: "tool-provider",
+    plugin_generation: "7",
     generation_spec_digest: digest("a"),
     artifact_digest: digest("b"),
     effective_host_grant_set_digest: digest("c"),

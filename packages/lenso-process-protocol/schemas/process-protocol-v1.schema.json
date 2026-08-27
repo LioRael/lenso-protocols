@@ -82,12 +82,12 @@
     "identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["protocol_profile", "value_profile", "module_instance", "module_generation", "generation_spec_digest", "artifact_digest", "effective_host_grant_set_digest", "interaction_profiles", "provided_capabilities", "outbound_bindings", "peer_limits"],
+      "required": ["protocol_profile", "value_profile", "plugin_instance", "plugin_generation", "generation_spec_digest", "artifact_digest", "effective_host_grant_set_digest", "interaction_profiles", "provided_capabilities", "outbound_bindings", "peer_limits"],
       "properties": {
         "protocol_profile": { "const": "lenso-process-jsonrpc-http-v1" },
         "value_profile": { "const": "lenso-json-value-v1" },
-        "module_instance": { "$ref": "#/$defs/token" },
-        "module_generation": { "$ref": "#/$defs/decimal" },
+        "plugin_instance": { "$ref": "#/$defs/token" },
+        "plugin_generation": { "$ref": "#/$defs/decimal" },
         "generation_spec_digest": { "$ref": "#/$defs/digest" },
         "artifact_digest": { "$ref": "#/$defs/digest" },
         "effective_host_grant_set_digest": { "$ref": "#/$defs/digest" },
@@ -171,7 +171,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "detail"],
-          "properties": { "kind": { "const": "module_failure" }, "detail": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+          "properties": { "kind": { "const": "plugin_failure" }, "detail": { "type": "string", "minLength": 1, "maxLength": 1024 } }
         }
       ]
     },

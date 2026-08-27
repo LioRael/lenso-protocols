@@ -25,7 +25,7 @@ export type RuntimeFailureKind =
   | "unknown_operation"
   | "ambiguous_binding"
   | "protocol_violation"
-  | "missing_module_factory"
+  | "missing_plugin_factory"
   | "unavailable_execution_class"
   | "invalid_resolved_plan"
   | "admission_closed"
@@ -33,8 +33,8 @@ export type RuntimeFailureKind =
   | "deadline_exceeded"
   | "cancelled"
   | "internal"
-  | "module_failure"
-  | "module_restart_exhausted";
+  | "plugin_failure"
+  | "plugin_restart_exhausted";
 
 /** Runtime-owned failure, separate from Capability-defined Domain Errors. */
 export interface RuntimeFailure {

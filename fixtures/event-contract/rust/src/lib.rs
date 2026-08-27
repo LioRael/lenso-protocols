@@ -23,7 +23,7 @@ impl AsyncNotifications {
         event: NotifyRequest,
     ) -> Result<(), RuntimeFailure> {
         if event.message == "fail" {
-            Err(RuntimeFailure::ModuleFailure {
+            Err(RuntimeFailure::PluginFailure {
                 detail: "notification handler failed".to_owned(),
             })
         } else {
@@ -69,7 +69,7 @@ mod tests {
             context(),
         ))
         .expect_err("provider Runtime Failure should remain observable to the Adapter");
-        assert!(matches!(error, RuntimeFailure::ModuleFailure { .. }));
+        assert!(matches!(error, RuntimeFailure::PluginFailure { .. }));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 This repository owns runtime-neutral protocol tooling and portable conformance
 artifacts for Lenso. It does not own the Kernel, host runtimes, product
-Capabilities, or Module implementations.
+Capabilities, or Plugin implementations.
 
 The source was extracted from `LioRael/lenso` at monorepo commit
 `67d21499548d07e92c2f6529d7c8345e58c067d9` under ADR 0064. Imported subtrees
@@ -31,17 +31,17 @@ only as the compatibility boundary. This Provider signature starts with
 `lenso-contract-codegen` 0.4 and requires `lenso-kernel` 0.1.4 or newer.
 
 Generated Rust Clients also implement
-`lenso_module_authoring::CapabilityClient`. This is the portable seam used by
-lifecycle-bound `Port<C>` fields: Module glue can connect a whole generated
+`lenso_plugin_authoring::CapabilityClient`. This is the portable seam used by
+lifecycle-bound `Port<C>` fields: Plugin glue can connect a whole generated
 Client from Plan-owned dependencies without knowing its request, stream, or
 Event handle layout. Rust Capability crates generated with this version must
-depend on `lenso-module-authoring`.
+depend on `lenso-plugin-authoring`.
 
 TypeScript bindings also expose a typed Provider interface and a generated
 request dispatcher. Runtime packages consume the runtime-neutral
-`CapabilityProviderBinding`; Module authors implement only their generated
+`CapabilityProviderBinding`; Plugin authors implement only their generated
 `Provider` alias and register it with `bindProvider`. Decoding, encoding,
-Domain Error preservation, unknown Operations, and thrown Module failures stay
+Domain Error preservation, unknown Operations, and thrown Plugin failures stay
 inside generated contract code instead of leaking into a Bun or Node runtime.
 
 Capability owners generate and check only the language projections they ship.

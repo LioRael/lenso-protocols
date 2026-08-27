@@ -258,9 +258,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "lenso-app-plan"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34dd8903d3180427d61784c9e07b229196cc6cb21618a83673153150398211b7"
+version = "0.2.0"
+source = "git+https://github.com/LioRael/lenso?rev=d95e2240e83e9f4b90139a48ca97e067376f4fa9#d95e2240e83e9f4b90139a48ca97e067376f4fa9"
 dependencies = [
  "serde",
  "serde_json",
@@ -314,23 +313,22 @@ dependencies = [
  "lenso-contract-codegen",
  "lenso-contract-runtime",
  "lenso-kernel",
- "lenso-module-authoring",
+ "lenso-plugin-authoring",
  "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "lenso-kernel"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d66c49832b0b5e825b4f746331a74fa943392db27bbe569365422dd468260fd"
+version = "0.1.12"
+source = "git+https://github.com/LioRael/lenso?rev=d95e2240e83e9f4b90139a48ca97e067376f4fa9#d95e2240e83e9f4b90139a48ca97e067376f4fa9"
 dependencies = [
  "futures",
  "lenso-app-plan",
 ]
 
 [[package]]
-name = "lenso-module-authoring"
+name = "lenso-plugin-authoring"
 version = "0.1.1"
 
 [[package]]
@@ -341,7 +339,7 @@ dependencies = [
  "lenso-contract-codegen",
  "lenso-contract-runtime",
  "lenso-kernel",
- "lenso-module-authoring",
+ "lenso-plugin-authoring",
  "serde",
  "serde_json",
 ]

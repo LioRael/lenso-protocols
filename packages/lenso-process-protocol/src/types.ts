@@ -44,8 +44,8 @@ export interface OutboundBindingDescriptor {
 export interface HandshakeIdentity {
   readonly protocol_profile: typeof PROCESS_PROFILE;
   readonly value_profile: typeof VALUE_PROFILE;
-  readonly module_instance: string;
-  readonly module_generation: string;
+  readonly plugin_instance: string;
+  readonly plugin_generation: string;
   readonly generation_spec_digest: string;
   readonly artifact_digest: string;
   readonly effective_host_grant_set_digest: string;
@@ -96,7 +96,7 @@ export type ChildRuntimeFailure =
       readonly operation: string;
     }
   | {
-      readonly kind: "module_failure";
+      readonly kind: "plugin_failure";
       readonly detail: string;
     };
 

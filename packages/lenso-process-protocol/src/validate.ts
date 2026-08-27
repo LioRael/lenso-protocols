@@ -48,8 +48,8 @@ export function validateHandshakeIdentity(value: unknown): asserts value is Hand
   exactKeys(identity, [
     "protocol_profile",
     "value_profile",
-    "module_instance",
-    "module_generation",
+    "plugin_instance",
+    "plugin_generation",
     "generation_spec_digest",
     "artifact_digest",
     "effective_host_grant_set_digest",
@@ -64,8 +64,8 @@ export function validateHandshakeIdentity(value: unknown): asserts value is Hand
   if (identity.value_profile !== VALUE_PROFILE) {
     throw new Error("unsupported portable value profile");
   }
-  token(identity.module_instance, "module_instance");
-  decimal(identity.module_generation, "module_generation");
+  token(identity.plugin_instance, "plugin_instance");
+  decimal(identity.plugin_generation, "plugin_generation");
   digest(identity.generation_spec_digest, "generation_spec_digest");
   digest(identity.artifact_digest, "artifact_digest");
   digest(
@@ -180,11 +180,11 @@ export function validateRequestResult(value: unknown): asserts value is RequestR
     token(failure.operation, "operation");
     return;
   }
-  if (failureKind === "module_failure") {
+  if (failureKind === "plugin_failure") {
     exactKeys(failure, ["kind", "detail"]);
-    const detail = string(failure.detail, "Module Failure detail");
+    const detail = string(failure.detail, "Plugin Failure detail");
     if (detail.length === 0 || new TextEncoder().encode(detail).length > 1024) {
-      throw new Error("Module Failure detail must contain 1..=1024 bytes");
+      throw new Error("Plugin Failure detail must contain 1..=1024 bytes");
     }
     return;
   }
