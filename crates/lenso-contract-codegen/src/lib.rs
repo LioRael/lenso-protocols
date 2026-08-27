@@ -542,35 +542,38 @@ pub fn load_descriptor(path: &Path) -> Result<Descriptor, CodegenError> {
             schema_path(&descriptor_path, operation, "domain_error_schema", &name)?;
         let mut ref_stack = Vec::new();
         let request_source = read_json(&request_schema_path)?;
-        let request_schema = resolve_refs(
+        let mut request_schema = resolve_refs(
             &request_source,
             &request_source,
             &request_schema_path,
             &package_root,
             &mut ref_stack,
         )?;
+        normalize_nullable_unions(&mut request_schema);
         validate_schema_profile(&request_schema, &request_schema_path)?;
         validate_value_generation_schema(&request_schema, &request_schema_path)?;
         let mut ref_stack = Vec::new();
         let response_source = read_json(&response_schema_path)?;
-        let response_schema = resolve_refs(
+        let mut response_schema = resolve_refs(
             &response_source,
             &response_source,
             &response_schema_path,
             &package_root,
             &mut ref_stack,
         )?;
+        normalize_nullable_unions(&mut response_schema);
         validate_schema_profile(&response_schema, &response_schema_path)?;
         validate_value_generation_schema(&response_schema, &response_schema_path)?;
         let mut ref_stack = Vec::new();
         let domain_error_source = read_json(&domain_error_schema_path)?;
-        let domain_error_schema = resolve_refs(
+        let mut domain_error_schema = resolve_refs(
             &domain_error_source,
             &domain_error_source,
             &domain_error_schema_path,
             &package_root,
             &mut ref_stack,
         )?;
+        normalize_nullable_unions(&mut domain_error_schema);
         validate_schema_profile(&domain_error_schema, &domain_error_schema_path)?;
         validate_domain_error_schema(&domain_error_schema, &domain_error_schema_path)?;
         operations.push(Operation {
@@ -817,6 +820,52 @@ fn json_pointer<'a>(root: &'a Value, fragment: &str) -> Option<&'a Value> {
         };
     }
     Some(current)
+}
+
+fn normalize_nullable_unions(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for child in object.values_mut() {
+                normalize_nullable_unions(child);
+            }
+            let nullable = ["anyOf", "oneOf"].into_iter().find_map(|key| {
+                let alternatives = object.get(key)?.as_array()?;
+                if alternatives.len() != 2 {
+                    return None;
+                }
+                let null_index = alternatives.iter().position(|alternative| {
+                    alternative.get("type").and_then(Value::as_str) == Some("null")
+                })?;
+                let non_null = alternatives.get(1 - null_index)?.as_object()?.clone();
+                let schema_type = non_null
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)?;
+                Some((key, schema_type, non_null))
+            });
+            if let Some((union_key, schema_type, mut normalized)) = nullable {
+                normalized.insert(
+                    "type".to_owned(),
+                    Value::Array(vec![
+                        Value::String(schema_type),
+                        Value::String("null".to_owned()),
+                    ]),
+                );
+                for (key, child) in std::mem::take(object) {
+                    if key != union_key {
+                        normalized.entry(key).or_insert(child);
+                    }
+                }
+                *object = normalized;
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                normalize_nullable_unions(child);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn validate_schema_profile(schema: &Value, source_path: &Path) -> Result<(), CodegenError> {

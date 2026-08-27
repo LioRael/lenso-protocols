@@ -87,8 +87,14 @@ fn schema_titles_preserve_authored_type_names_across_projections() {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "CatalogRequest",
         "type": "object",
-        "required": ["tools"],
+        "required": ["selected", "tools"],
         "properties": {
+            "selected": {
+                "anyOf": [
+                    { "$ref": "#/$defs/ToolDefinition" },
+                    { "type": "null" }
+                ]
+            },
             "tools": {
                 "type": "array",
                 "items": { "$ref": "#/$defs/ToolDefinition" }
@@ -109,6 +115,11 @@ fn schema_titles_preserve_authored_type_names_across_projections() {
     let generated = generate(&descriptor).unwrap();
     assert!(generated.rust.contains("pub struct CatalogRequest"));
     assert!(generated.rust.contains("pub tools: Vec<ToolDefinition>"));
+    assert!(
+        generated
+            .rust
+            .contains("pub selected: Option<ToolDefinition>")
+    );
     assert!(generated.rust.contains("pub struct ToolDefinition"));
     assert!(
         generated
