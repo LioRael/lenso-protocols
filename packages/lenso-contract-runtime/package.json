@@ -1,6 +1,6 @@
 {
   "name": "@lenso/contract-runtime",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Runtime-neutral TypeScript wire support for generated Lenso Capability contracts.",
   "type": "module",
   "license": "MIT",
