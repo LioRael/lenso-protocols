@@ -4,17 +4,8 @@ changelog_update = false
 git_tag_name = "{{ package }}-v{{ version }}"
 pr_labels = ["release"]
 
-# These packages remain publishable, but their current releases depend on the
-# missing Trusted Publishers being authorized on crates.io. Keep them out of
-# the automated queue so they cannot block independently releasable crates.
-[[package]]
-name = "lenso-contract-authoring"
-release = false
-
-[[package]]
-name = "lenso-contract-codegen"
-release = false
-
+# Process protocol remains publishable, but its current release depends on a
+# Trusted Publisher that is not part of the Plugin authoring release chain.
 [[package]]
 name = "lenso-process-protocol"
 release = false
