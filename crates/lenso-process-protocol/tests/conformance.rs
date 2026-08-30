@@ -1,8 +1,8 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac as _};
 use lenso_process_protocol::{
-    HandshakeIdentity, HandshakeParams, child_proof_message, handshake_params_digest,
-    host_proof_message,
+    HandshakeIdentity, HandshakeParams, child_proof_message, decode_strict,
+    handshake_params_digest, host_proof_message,
 };
 use serde::Deserialize;
 use sha2::Sha256;
@@ -20,6 +20,14 @@ struct Fixture {
     child_message_hex: String,
     host_proof: String,
     child_proof: String,
+}
+
+#[derive(Deserialize)]
+struct StrictJsonVector {
+    name: String,
+    wire: String,
+    accepted: bool,
+    forbidden_error_fragment: Option<String>,
 }
 
 #[test]
@@ -58,6 +66,26 @@ fn rust_matches_process_protocol_v1_proof_vectors() {
     assert_eq!(encode_hex(&child_message), fixture.child_message_hex);
     assert_eq!(proof(&host_message), fixture.host_proof);
     assert_eq!(proof(&child_message), fixture.child_proof);
+}
+
+#[test]
+fn rust_matches_the_shared_strict_json_conformance_corpus() {
+    let vectors: Vec<StrictJsonVector> = serde_json::from_str(include_str!(
+        "../../../fixtures/process-protocol/strict-json-conformance.json"
+    ))
+    .expect("the shared strict JSON corpus should be valid JSON");
+
+    for vector in vectors {
+        let result = decode_strict::<serde_json::Value>(vector.wire.as_bytes());
+        assert_eq!(result.is_ok(), vector.accepted, "{}", vector.name);
+        if let Err(error) = result {
+            let message = error.to_string();
+            assert_eq!(message, "invalid strict JSON", "{}", vector.name);
+            if let Some(fragment) = vector.forbidden_error_fragment {
+                assert!(!message.contains(&fragment), "{}", vector.name);
+            }
+        }
+    }
 }
 
 fn decode_hex(value: &str) -> Vec<u8> {

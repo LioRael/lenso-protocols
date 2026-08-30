@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use lenso_contract_codegen::{
     CodegenError, CompatibilityError, ProjectionLanguage, check_generated, check_projection,
@@ -835,6 +838,190 @@ fn wire_values_are_checked_against_portable_formats_and_schema_shape() {
 }
 
 #[test]
+fn duration_wire_values_follow_the_strict_iso_8601_grammar() {
+    let schema = Path::new("tests/fixtures/profile/schemas/round-trip-request.schema.json");
+    let vectors = [
+        ("P3Y6M4DT12H30M5S", true),
+        ("-P3DT4H", true),
+        ("PT1.5S", true),
+        ("P1.5Y", true),
+        ("P1Y2.5M", true),
+        ("P2W", true),
+        ("P1.5W", true),
+        ("PT0S", true),
+        ("P", false),
+        ("PT", false),
+        ("P1.S", false),
+        ("P.5D", false),
+        ("P1.5Y2M", false),
+        ("P1DT1.5H30M", false),
+        ("P1D2M", false),
+        ("P1Y2Y", false),
+        ("PT1S2M", false),
+        ("PT1M2M", false),
+        ("P1W2D", false),
+        ("P1Y2W", false),
+        ("P1WT2H", false),
+    ];
+
+    for (duration, accepted) in vectors {
+        let value = json!({
+            "name": "Ada",
+            "signed": "0",
+            "unsigned": "0",
+            "payload": "AQI=",
+            "timestamp": "2026-08-21T12:34:56Z",
+            "duration": duration,
+            "values": []
+        });
+        let result = validate_wire_value(schema, &value);
+        assert_eq!(result.is_ok(), accepted, "duration {duration}");
+    }
+}
+
+#[test]
+fn wire_string_patterns_match_unicode_and_reject_mismatches() {
+    let schema = temporary_schema(
+        "unicode-pattern",
+        r#"{"type":"string","pattern":"^\\p{Letter}+$"}"#,
+    );
+
+    validate_wire_value(&schema, &json!("Καλημέρα"))
+        .expect("Unicode letters should match the portable pattern");
+    for mismatch in ["letters-1", "Καλημέρα\n"] {
+        assert!(
+            validate_wire_value(&schema, &json!(mismatch)).is_err(),
+            "a pattern mismatch must be rejected: {mismatch:?}"
+        );
+    }
+
+    remove_temporary_schema(&schema);
+}
+
+#[test]
+fn schema_profile_rejects_cross_engine_regex_syntax() {
+    for (label, source) in [
+        (
+            "unicode-shorthand",
+            r#"{"type":"string","pattern":"^\\d+$"}"#,
+        ),
+        (
+            "rust-only-anchor",
+            r#"{"type":"string","pattern":"\\Avalue"}"#,
+        ),
+    ] {
+        let schema = temporary_schema(label, source);
+        let error = validate_wire_value(&schema, &json!("123"))
+            .expect_err("cross-engine regex syntax must fail closed");
+        assert!(error.to_string().contains("portable regex subset"));
+        remove_temporary_schema(&schema);
+    }
+}
+
+#[test]
+fn rust_matches_the_shared_portable_pattern_safety_corpus() {
+    let vectors: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../fixtures/portable-contract/portable-pattern-conformance.json"
+    ))
+    .expect("the shared portable pattern corpus should be valid JSON");
+
+    for (index, vector) in vectors
+        .as_array()
+        .expect("the portable pattern corpus should be an array")
+        .iter()
+        .enumerate()
+    {
+        let name = vector["name"]
+            .as_str()
+            .expect("each portable pattern needs a name");
+        let pattern = vector["pattern"]
+            .as_str()
+            .expect("each portable pattern needs a pattern");
+        let sample = vector["sample"]
+            .as_str()
+            .expect("each portable pattern needs a sample");
+        let accepted = vector["accepted"]
+            .as_bool()
+            .expect("each portable pattern needs an acceptance result");
+        let source = json!({"type": "string", "pattern": pattern}).to_string();
+        let schema = temporary_schema(&format!("portable-pattern-{index}"), &source);
+        let result = validate_wire_value(&schema, &json!(sample));
+        assert_eq!(result.is_ok(), accepted, "{name}");
+        remove_temporary_schema(&schema);
+    }
+}
+
+#[test]
+fn wire_unique_items_use_json_semantic_equality() {
+    let schema = temporary_schema("unique-items", r#"{"type":"array","uniqueItems":true}"#);
+
+    validate_wire_value(
+        &schema,
+        &json!([{"first": 1, "second": 2}, {"first": 2, "second": 1}]),
+    )
+    .expect("distinct JSON values should remain valid");
+    assert!(
+        validate_wire_value(
+            &schema,
+            &json!([{"first": 1, "second": 2}, {"second": 2, "first": 1}])
+        )
+        .is_err(),
+        "object key order must not make equal items unique"
+    );
+    for duplicate in [json!([-0.0, 0]), json!([1, 1.0])] {
+        assert!(
+            validate_wire_value(&schema, &duplicate).is_err(),
+            "portable numeric equality must reject {duplicate}"
+        );
+    }
+
+    remove_temporary_schema(&schema);
+}
+
+#[test]
+fn schema_profile_rejects_unknown_assertions_recursively() {
+    for (label, source, keyword) in [
+        (
+            "unknown-top-level",
+            r#"{"type":"object","minProperties":1}"#,
+            "minProperties",
+        ),
+        (
+            "unknown-nested",
+            r#"{"type":"object","properties":{"nested":{"type":"array","contains":{"const":"required"}}}}"#,
+            "contains",
+        ),
+    ] {
+        let schema = temporary_schema(label, source);
+        let error = validate_wire_value(&schema, &json!({}))
+            .expect_err("unknown assertion keywords must fail closed");
+        assert!(error.to_string().contains(keyword));
+        remove_temporary_schema(&schema);
+    }
+}
+
+#[test]
+fn schema_profile_accepts_harmless_annotations() {
+    let schema = temporary_schema(
+        "annotations",
+        r#"{
+          "$schema":"https://json-schema.org/draft/2020-12/schema",
+          "$id":"urn:lenso:test:annotated",
+          "title":"Annotated value",
+          "description":"Portable metadata",
+          "default":"fallback",
+          "examples":["first"],
+          "x-lenso-sensitive":true,
+          "type":"string"
+        }"#,
+    );
+
+    validate_wire_value(&schema, &json!("value"))
+        .expect("harmless Schema annotations should remain accepted");
+    remove_temporary_schema(&schema);
+}
+
+#[test]
 fn generated_artifact_check_detects_drift() {
     let root = std::env::temp_dir().join(format!("lenso-contract-codegen-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("the temporary artifact directory should exist");
@@ -1028,6 +1215,24 @@ fn operation_generated_names_cannot_shadow_client_methods() {
     let error = load_descriptor(&descriptor_path).expect_err("Client methods must be reserved");
     assert!(error.to_string().contains("generated Client API"));
     std::fs::remove_dir_all(root).expect("the temporary contract directory should be removable");
+}
+
+fn temporary_schema(label: &str, source: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "lenso-contract-codegen-schema-{label}-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&root).expect("the temporary Schema directory should exist");
+    let path = root.join("schema.json");
+    std::fs::write(&path, source).expect("the temporary Schema should be writable");
+    path
+}
+
+fn remove_temporary_schema(path: &Path) {
+    let root = path
+        .parent()
+        .expect("a temporary Schema should have a parent directory");
+    std::fs::remove_dir_all(root).expect("the temporary Schema directory should be removable");
 }
 
 #[test]

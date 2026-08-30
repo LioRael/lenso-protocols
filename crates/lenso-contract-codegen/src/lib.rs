@@ -7,7 +7,7 @@
 //! Rust and TypeScript artifacts before an App is booted.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     error::Error,
     fmt,
     fmt::Write as _,
@@ -15,6 +15,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use regex::Regex;
 use serde_json::{Map, Value};
 
 mod browser;
@@ -868,143 +869,713 @@ fn normalize_nullable_unions(value: &mut Value) {
     }
 }
 
+const SUPPORTED_SCHEMA_KEYWORDS: &[&str] = &[
+    "$defs",
+    "additionalProperties",
+    "anyOf",
+    "const",
+    "enum",
+    "exclusiveMaximum",
+    "exclusiveMinimum",
+    "format",
+    "items",
+    "maxItems",
+    "maxLength",
+    "maximum",
+    "minItems",
+    "minLength",
+    "minimum",
+    "oneOf",
+    "pattern",
+    "properties",
+    "required",
+    "type",
+    "uniqueItems",
+];
+
+const HARMLESS_SCHEMA_ANNOTATIONS: &[&str] = &[
+    "$anchor",
+    "$comment",
+    "$dynamicAnchor",
+    "$id",
+    "$schema",
+    "default",
+    "deprecated",
+    "description",
+    "examples",
+    "readOnly",
+    "title",
+    "writeOnly",
+    "x-lenso-sensitive",
+];
+
+const PORTABLE_SCHEMA_TYPES: &[&str] = &[
+    "array", "boolean", "integer", "null", "number", "object", "string",
+];
+
+const PORTABLE_STRING_FORMATS: &[&str] = &["byte", "date-time", "duration", "int64", "uint64"];
+const MAX_PORTABLE_PATTERN_CHARS: usize = 4_096;
+const MAX_PORTABLE_REPETITION: u32 = 10_000;
+const PORTABLE_UNICODE_PROPERTY_ESCAPE: &str = r"\p{Letter}";
+
 fn validate_schema_profile(schema: &Value, source_path: &Path) -> Result<(), CodegenError> {
     let Some(object) = schema.as_object() else {
-        return Err(CodegenError::UnsupportedSchema {
-            path: source_path.to_path_buf(),
-            detail: "a JSON Schema must be an object".to_owned(),
-        });
+        return Err(unsupported_schema(
+            source_path,
+            "a JSON Schema must be an object",
+        ));
     };
 
-    if let Some(format) = object.get("format").and_then(Value::as_str) {
-        if !matches!(
-            format,
-            "int64" | "uint64" | "byte" | "date-time" | "duration"
-        ) {
-            return Err(CodegenError::UnsupportedSchema {
-                path: source_path.to_path_buf(),
-                detail: format!("format `{format}` is outside the portable value profile"),
-            });
-        }
-        if !schema_includes_type(object, "string") {
-            return Err(CodegenError::UnsupportedSchema {
-                path: source_path.to_path_buf(),
-                detail: format!("portable format `{format}` must be attached to a string Schema"),
-            });
+    for keyword in object.keys() {
+        if !SUPPORTED_SCHEMA_KEYWORDS.contains(&keyword.as_str())
+            && !HARMLESS_SCHEMA_ANNOTATIONS.contains(&keyword.as_str())
+        {
+            return Err(unsupported_schema(
+                source_path,
+                format!("Schema keyword `{keyword}` is outside the portable profile"),
+            ));
         }
     }
 
+    validate_schema_type_keyword(object, source_path)?;
+    validate_schema_composition_keywords(object, source_path)?;
+    validate_schema_scalar_keywords(object, source_path)?;
+    validate_schema_numeric_keywords(object, source_path)?;
+    validate_schema_children(object, source_path)
+}
+
+fn validate_schema_type_keyword(
+    object: &Map<String, Value>,
+    source_path: &Path,
+) -> Result<(), CodegenError> {
     if let Some(schema_type) = object.get("type") {
         match schema_type {
-            Value::String(schema_type) => validate_schema_type(schema_type, object, source_path)?,
-            Value::Array(types) => {
-                if types.is_empty() {
-                    return Err(CodegenError::UnsupportedSchema {
-                        path: source_path.to_path_buf(),
-                        detail: "a Schema type union cannot be empty".to_owned(),
-                    });
-                }
+            Value::String(schema_type) => validate_schema_type(schema_type, source_path)?,
+            Value::Array(types) if !types.is_empty() => {
+                let mut unique = BTreeSet::new();
                 for schema_type in types {
                     let Some(schema_type) = schema_type.as_str() else {
-                        return Err(CodegenError::UnsupportedSchema {
-                            path: source_path.to_path_buf(),
-                            detail: "Schema type unions must contain strings".to_owned(),
-                        });
+                        return Err(unsupported_schema(
+                            source_path,
+                            "Schema type unions must contain strings",
+                        ));
                     };
-                    validate_schema_type(schema_type, object, source_path)?;
+                    validate_schema_type(schema_type, source_path)?;
+                    if !unique.insert(schema_type) {
+                        return Err(unsupported_schema(
+                            source_path,
+                            "Schema type unions must be unique",
+                        ));
+                    }
                 }
             }
+            Value::Array(_) => {
+                return Err(unsupported_schema(
+                    source_path,
+                    "a Schema type union cannot be empty",
+                ));
+            }
             _ => {
-                return Err(CodegenError::UnsupportedSchema {
-                    path: source_path.to_path_buf(),
-                    detail: "Schema `type` must be a string or array".to_owned(),
-                });
+                return Err(unsupported_schema(
+                    source_path,
+                    "Schema `type` must be a string or array",
+                ));
             }
         }
-    } else if let Some(alternatives) = object
-        .get("oneOf")
-        .or_else(|| object.get("anyOf"))
-        .and_then(Value::as_array)
-    {
-        for alternative in alternatives {
-            validate_schema_profile(alternative, source_path)?;
-        }
-    } else if !object.contains_key("const") && !object.contains_key("enum") {
-        return Err(CodegenError::UnsupportedSchema {
-            path: source_path.to_path_buf(),
-            detail: "Schema needs a supported `type`, `oneOf`, `anyOf`, `const`, or `enum`"
-                .to_owned(),
-        });
     }
 
-    if let Some(properties) = object.get("properties") {
-        let Some(properties) = properties.as_object() else {
-            return Err(CodegenError::UnsupportedSchema {
-                path: source_path.to_path_buf(),
-                detail: "Schema `properties` must be an object".to_owned(),
-            });
-        };
-        for property in properties.values() {
-            validate_schema_profile(property, source_path)?;
+    Ok(())
+}
+
+fn validate_schema_composition_keywords(
+    object: &Map<String, Value>,
+    source_path: &Path,
+) -> Result<(), CodegenError> {
+    for keyword in ["oneOf", "anyOf"] {
+        if let Some(value) = object.get(keyword) {
+            let Some(alternatives) = value.as_array().filter(|values| !values.is_empty()) else {
+                return Err(unsupported_schema(
+                    source_path,
+                    format!("Schema `{keyword}` must be a non-empty array of Schemas"),
+                ));
+            };
+            for alternative in alternatives {
+                validate_schema_profile(alternative, source_path)?;
+            }
         }
     }
+
+    Ok(())
+}
+
+fn validate_schema_scalar_keywords(
+    object: &Map<String, Value>,
+    source_path: &Path,
+) -> Result<(), CodegenError> {
+    if let Some(values) = object.get("enum")
+        && values.as_array().is_none_or(Vec::is_empty)
+    {
+        return Err(unsupported_schema(
+            source_path,
+            "Schema `enum` must be a non-empty array",
+        ));
+    }
+    if let Some(required) = object.get("required")
+        && required
+            .as_array()
+            .is_none_or(|values| values.iter().any(|value| !value.is_string()))
+    {
+        return Err(unsupported_schema(
+            source_path,
+            "Schema `required` must be an array of strings",
+        ));
+    }
+    if let Some(pattern) = object.get("pattern") {
+        let Some(pattern) = pattern.as_str() else {
+            return Err(unsupported_schema(
+                source_path,
+                "Schema `pattern` must be a string",
+            ));
+        };
+        compile_portable_pattern(pattern).map_err(|error| {
+            unsupported_schema(
+                source_path,
+                format!("Schema `pattern` is outside the portable regex subset: {error}"),
+            )
+        })?;
+    }
+    if let Some(format) = object.get("format") {
+        let Some(format) = format.as_str() else {
+            return Err(unsupported_schema(
+                source_path,
+                "Schema `format` must be a string",
+            ));
+        };
+        if !PORTABLE_STRING_FORMATS.contains(&format) {
+            return Err(unsupported_schema(
+                source_path,
+                format!("format `{format}` is outside the portable value profile"),
+            ));
+        }
+    }
+    if object
+        .get("uniqueItems")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err(unsupported_schema(
+            source_path,
+            "Schema `uniqueItems` must be a boolean",
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_schema_numeric_keywords(
+    object: &Map<String, Value>,
+    source_path: &Path,
+) -> Result<(), CodegenError> {
+    for keyword in ["minLength", "maxLength", "minItems", "maxItems"] {
+        if let Some(value) = object.get(keyword)
+            && non_negative_safe_schema_integer(value).is_none()
+        {
+            return Err(unsupported_schema(
+                source_path,
+                format!("Schema `{keyword}` must be a non-negative safe integer"),
+            ));
+        }
+    }
+    for keyword in ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"] {
+        if let Some(value) = object.get(keyword)
+            && value.as_f64().is_none_or(|number| !number.is_finite())
+        {
+            return Err(unsupported_schema(
+                source_path,
+                format!("Schema `{keyword}` must be a finite number"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_schema_children(
+    object: &Map<String, Value>,
+    source_path: &Path,
+) -> Result<(), CodegenError> {
     if let Some(items) = object.get("items") {
         validate_schema_profile(items, source_path)?;
+    }
+    for keyword in ["properties", "$defs"] {
+        if let Some(value) = object.get(keyword) {
+            let Some(schemas) = value.as_object() else {
+                return Err(unsupported_schema(
+                    source_path,
+                    format!("Schema `{keyword}` must be an object of Schemas"),
+                ));
+            };
+            for child in schemas.values() {
+                validate_schema_profile(child, source_path)?;
+            }
+        }
     }
     if let Some(additional) = object.get("additionalProperties")
         && !additional.is_boolean()
     {
         validate_schema_profile(additional, source_path)?;
     }
-    if let Some(definitions) = object.get("$defs").and_then(Value::as_object) {
-        for definition in definitions.values() {
-            validate_schema_profile(definition, source_path)?;
+
+    Ok(())
+}
+
+fn validate_schema_type(schema_type: &str, source_path: &Path) -> Result<(), CodegenError> {
+    if PORTABLE_SCHEMA_TYPES.contains(&schema_type) {
+        Ok(())
+    } else {
+        Err(unsupported_schema(
+            source_path,
+            format!("Schema type `{schema_type}` is outside the portable profile"),
+        ))
+    }
+}
+
+/// Compiles only the regular-expression syntax whose match semantics are shared
+/// by Rust `regex` and ECMAScript Unicode-mode `RegExp` for portable Schemas.
+/// Engine-specific shorthand classes, anchors, wildcard dots, lookarounds,
+/// backreferences, inline flags, and backtracking-unsafe repetition shapes fail
+/// closed before either runtime uses them.
+fn compile_portable_pattern(pattern: &str) -> Result<Regex, String> {
+    if !has_portable_pattern_syntax(pattern) {
+        return Err("pattern uses syntax outside the shared Rust/ECMAScript subset".to_owned());
+    }
+    Regex::new(pattern).map_err(|error| error.to_string())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "these are independent regex risk facts mirrored explicitly in the TypeScript gate"
+)]
+struct PortablePatternAtom {
+    can_match_empty: bool,
+    has_variable_shape: bool,
+    is_quantified: bool,
+    prefix_can_match_empty: bool,
+    contains_variable_repetition: bool,
+    contains_alternation: bool,
+    is_group: bool,
+}
+
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "branch-local and group-wide regex risk facts are independent parser state"
+)]
+struct PortablePatternFrame {
+    sequence_can_match_empty: bool,
+    earlier_branch_can_match_empty: bool,
+    contains_variable_repetition: bool,
+    contains_alternation: bool,
+    branch_has_variable_shape: bool,
+    last_atom: Option<PortablePatternAtom>,
+}
+
+impl Default for PortablePatternFrame {
+    fn default() -> Self {
+        Self {
+            sequence_can_match_empty: true,
+            earlier_branch_can_match_empty: false,
+            contains_variable_repetition: false,
+            contains_alternation: false,
+            branch_has_variable_shape: false,
+            last_atom: None,
         }
     }
-    if let Some(alternatives) = object
-        .get("oneOf")
-        .or_else(|| object.get("anyOf"))
-        .and_then(Value::as_array)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PortableRepetition {
+    minimum: u32,
+    maximum: Option<u32>,
+}
+
+impl PortableRepetition {
+    fn has_variable_extent(self) -> bool {
+        self.maximum != Some(self.minimum)
+    }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "keeping the single-pass scanner locally isomorphic with the TypeScript gate makes parity auditable"
+)]
+fn has_portable_pattern_syntax(pattern: &str) -> bool {
+    if pattern.chars().count() > MAX_PORTABLE_PATTERN_CHARS || !has_portable_outer_anchors(pattern)
     {
-        for alternative in alternatives {
-            validate_schema_profile(alternative, source_path)?;
+        return false;
+    }
+
+    let bytes = pattern.as_bytes();
+    let mut index = 0;
+    let mut in_class = false;
+    let mut class_start = None;
+    let mut frames = vec![PortablePatternFrame::default()];
+    while index < bytes.len() {
+        if in_class {
+            match bytes[index] {
+                b'\\' => {
+                    if pattern[index..].starts_with(PORTABLE_UNICODE_PROPERTY_ESCAPE) {
+                        index += PORTABLE_UNICODE_PROPERTY_ESCAPE.len();
+                        continue;
+                    }
+                    let Some(&escaped) = bytes.get(index + 1) else {
+                        return false;
+                    };
+                    if !matches!(
+                        escaped,
+                        b'^' | b'$'
+                            | b'\\'
+                            | b'.'
+                            | b'*'
+                            | b'+'
+                            | b'?'
+                            | b'('
+                            | b')'
+                            | b'['
+                            | b']'
+                            | b'{'
+                            | b'}'
+                            | b'|'
+                            | b'/'
+                            | b'-'
+                    ) {
+                        return false;
+                    }
+                    index += 2;
+                }
+                b']' => {
+                    let Some(start) = class_start.take() else {
+                        return false;
+                    };
+                    if matches!(&pattern[start..index], "" | "^") {
+                        return false;
+                    }
+                    in_class = false;
+                    let Some(frame) = frames.last_mut() else {
+                        return false;
+                    };
+                    if !push_portable_pattern_atom(frame, PortablePatternAtom::default()) {
+                        return false;
+                    }
+                    index += 1;
+                }
+                b'[' => return false,
+                operator @ (b'&' | b'-' | b'~' | b'|')
+                    if bytes.get(index + 1) == Some(&operator) =>
+                {
+                    return false;
+                }
+                byte if byte.is_ascii_control() => return false,
+                byte if byte.is_ascii() => index += 1,
+                _ => {
+                    let Some(character) = pattern[index..].chars().next() else {
+                        return false;
+                    };
+                    if character.is_control() {
+                        return false;
+                    }
+                    index += character.len_utf8();
+                }
+            }
+            continue;
+        }
+
+        match bytes[index] {
+            b'\\' => {
+                if pattern[index..].starts_with(PORTABLE_UNICODE_PROPERTY_ESCAPE) {
+                    index += PORTABLE_UNICODE_PROPERTY_ESCAPE.len();
+                } else {
+                    let Some(&escaped) = bytes.get(index + 1) else {
+                        return false;
+                    };
+                    if !matches!(
+                        escaped,
+                        b'^' | b'$'
+                            | b'\\'
+                            | b'.'
+                            | b'*'
+                            | b'+'
+                            | b'?'
+                            | b'('
+                            | b')'
+                            | b'['
+                            | b']'
+                            | b'{'
+                            | b'}'
+                            | b'|'
+                            | b'/'
+                    ) {
+                        return false;
+                    }
+                    index += 2;
+                }
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                if !push_portable_pattern_atom(frame, PortablePatternAtom::default()) {
+                    return false;
+                }
+            }
+            b'[' => {
+                in_class = true;
+                class_start = Some(index + 1);
+                index += 1;
+            }
+            b']' | b'}' | b'.' => return false,
+            b'(' => {
+                if bytes.get(index + 1) == Some(&b'?') {
+                    if !pattern[index..].starts_with("(?:") {
+                        return false;
+                    }
+                    index += 3;
+                } else {
+                    index += 1;
+                }
+                frames.push(PortablePatternFrame::default());
+            }
+            b')' => {
+                if frames.len() == 1 {
+                    return false;
+                }
+                let Some(group) = frames.pop() else {
+                    return false;
+                };
+                let can_match_empty =
+                    group.earlier_branch_can_match_empty || group.sequence_can_match_empty;
+                if can_match_empty {
+                    return false;
+                }
+                let atom = PortablePatternAtom {
+                    can_match_empty,
+                    has_variable_shape: group.contains_variable_repetition
+                        || group.contains_alternation,
+                    contains_variable_repetition: group.contains_variable_repetition,
+                    contains_alternation: group.contains_alternation,
+                    is_group: true,
+                    ..PortablePatternAtom::default()
+                };
+                let Some(parent) = frames.last_mut() else {
+                    return false;
+                };
+                if !push_portable_pattern_atom(parent, atom) {
+                    return false;
+                }
+                index += 1;
+            }
+            b'|' => {
+                if frames.len() == 1 {
+                    return false;
+                }
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                frame.contains_alternation = true;
+                frame.earlier_branch_can_match_empty |= frame.sequence_can_match_empty;
+                frame.sequence_can_match_empty = true;
+                frame.branch_has_variable_shape = false;
+                frame.last_atom = None;
+                index += 1;
+            }
+            b'*' | b'+' | b'?' => {
+                let repetition = match bytes[index] {
+                    b'*' => PortableRepetition {
+                        minimum: 0,
+                        maximum: None,
+                    },
+                    b'+' => PortableRepetition {
+                        minimum: 1,
+                        maximum: None,
+                    },
+                    b'?' => PortableRepetition {
+                        minimum: 0,
+                        maximum: Some(1),
+                    },
+                    _ => unreachable!(),
+                };
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                if !apply_portable_repetition(frame, repetition) {
+                    return false;
+                }
+                index += 1;
+            }
+            b'{' => {
+                let Some(close_offset) = pattern[index + 1..].find('}') else {
+                    return false;
+                };
+                let close = index + 1 + close_offset;
+                let Some(repetition) = parse_portable_repetition(&pattern[index + 1..close]) else {
+                    return false;
+                };
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                if !apply_portable_repetition(frame, repetition) {
+                    return false;
+                }
+                index = close + 1;
+            }
+            b'^' | b'$' => {
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                frame.last_atom = None;
+                index += 1;
+            }
+            byte if byte.is_ascii_control() => return false,
+            byte if byte.is_ascii() => {
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                if !push_portable_pattern_atom(frame, PortablePatternAtom::default()) {
+                    return false;
+                }
+                index += 1;
+            }
+            _ => {
+                let Some(character) = pattern[index..].chars().next() else {
+                    return false;
+                };
+                if character.is_control() {
+                    return false;
+                }
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                if !push_portable_pattern_atom(frame, PortablePatternAtom::default()) {
+                    return false;
+                }
+                index += character.len_utf8();
+            }
         }
     }
-    Ok(())
+
+    !in_class && frames.len() == 1
 }
 
-fn validate_schema_type(
-    schema_type: &str,
-    schema: &Map<String, Value>,
-    source_path: &Path,
-) -> Result<(), CodegenError> {
-    if !matches!(
-        schema_type,
-        "object" | "array" | "string" | "integer" | "number" | "boolean" | "null"
-    ) {
-        return Err(CodegenError::UnsupportedSchema {
-            path: source_path.to_path_buf(),
-            detail: format!("Schema type `{schema_type}` is outside the portable profile"),
-        });
+fn has_portable_outer_anchors(pattern: &str) -> bool {
+    let bytes = pattern.as_bytes();
+    if bytes.first() != Some(&b'^') || bytes.last() != Some(&b'$') {
+        return false;
     }
-    if schema_type == "array" && !schema.contains_key("items") {
-        return Err(CodegenError::UnsupportedSchema {
-            path: source_path.to_path_buf(),
-            detail: "array Schemas must declare `items`".to_owned(),
-        });
-    }
-    Ok(())
+    bytes[..bytes.len() - 1]
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\\')
+        .count()
+        % 2
+        == 0
 }
 
-fn schema_includes_type(schema: &Map<String, Value>, expected: &str) -> bool {
-    match schema.get("type") {
-        Some(Value::String(schema_type)) => schema_type == expected,
-        Some(Value::Array(types)) => types.iter().any(|schema_type| {
-            schema_type
-                .as_str()
-                .is_some_and(|schema_type| schema_type == expected)
-        }),
-        _ => false,
+fn push_portable_pattern_atom(
+    frame: &mut PortablePatternFrame,
+    mut atom: PortablePatternAtom,
+) -> bool {
+    if atom.has_variable_shape && frame.branch_has_variable_shape {
+        return false;
+    }
+    atom.prefix_can_match_empty = frame.sequence_can_match_empty;
+    frame.sequence_can_match_empty &= atom.can_match_empty;
+    frame.branch_has_variable_shape |= atom.has_variable_shape;
+    frame.contains_variable_repetition |= atom.contains_variable_repetition;
+    frame.contains_alternation |= atom.contains_alternation;
+    frame.last_atom = Some(atom);
+    true
+}
+
+fn apply_portable_repetition(
+    frame: &mut PortablePatternFrame,
+    repetition: PortableRepetition,
+) -> bool {
+    let Some(atom) = frame.last_atom.as_mut() else {
+        return false;
+    };
+    if atom.is_quantified || repetition.maximum == Some(0) {
+        return false;
+    }
+    if atom.is_group
+        && (atom.can_match_empty || atom.contains_variable_repetition || atom.contains_alternation)
+    {
+        return false;
+    }
+
+    let has_variable_extent = repetition.has_variable_extent();
+    if has_variable_extent && frame.branch_has_variable_shape {
+        return false;
+    }
+    atom.is_quantified = true;
+    atom.has_variable_shape |= has_variable_extent;
+    atom.can_match_empty = repetition.minimum == 0 || atom.can_match_empty;
+    frame.sequence_can_match_empty = atom.prefix_can_match_empty && atom.can_match_empty;
+    frame.branch_has_variable_shape |= has_variable_extent;
+    frame.contains_variable_repetition |= has_variable_extent;
+    true
+}
+
+fn parse_portable_repetition(value: &str) -> Option<PortableRepetition> {
+    let (minimum, maximum) = if let Some((minimum, maximum)) = value.split_once(',') {
+        if maximum.contains(',') {
+            return None;
+        }
+        let minimum = parse_portable_repetition_bound(minimum)?;
+        let maximum = if maximum.is_empty() {
+            None
+        } else {
+            Some(parse_portable_repetition_bound(maximum)?)
+        };
+        (minimum, maximum)
+    } else {
+        let minimum = parse_portable_repetition_bound(value)?;
+        (minimum, Some(minimum))
+    };
+    if maximum.is_some_and(|maximum| maximum < minimum) {
+        return None;
+    }
+    Some(PortableRepetition { minimum, maximum })
+}
+
+fn parse_portable_repetition_bound(value: &str) -> Option<u32> {
+    if value.is_empty()
+        || value.len() > 1 && value.starts_with('0')
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value <= MAX_PORTABLE_REPETITION)
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "the finite, non-negative, integral, safe-integer checks make this conversion exact"
+)]
+fn non_negative_safe_schema_integer(value: &Value) -> Option<u64> {
+    let number = value.as_f64()?;
+    (number.is_finite()
+        && number >= 0.0
+        && number.fract() == 0.0
+        && number <= 9_007_199_254_740_991.0)
+        .then_some(number as u64)
+}
+
+fn unsupported_schema(source_path: &Path, detail: impl Into<String>) -> CodegenError {
+    CodegenError::UnsupportedSchema {
+        path: source_path.to_path_buf(),
+        detail: detail.into(),
     }
 }
 
@@ -1374,6 +1945,7 @@ pub fn validate_wire_value(schema_path: &Path, value: &Value) -> Result<(), Code
         &package_root,
         &mut ref_stack,
     )?;
+    validate_portable_value(value, "$".to_owned())?;
     validate_schema_profile(&schema, &schema_path)?;
     validate_wire_value_inner(&schema, value, "$", &schema_path)
 }
@@ -1385,12 +1957,14 @@ fn validate_wire_value_inner(
     source_path: &Path,
 ) -> Result<(), CodegenError> {
     if let Some(constant) = schema.get("const")
-        && value != constant
+        && !portable_json_semantic_equal(value, constant)
     {
         return invalid_wire_value(path, "value does not match the Schema const", source_path);
     }
     if let Some(values) = schema.get("enum").and_then(Value::as_array)
-        && !values.iter().any(|candidate| candidate == value)
+        && !values
+            .iter()
+            .any(|candidate| portable_json_semantic_equal(candidate, value))
     {
         return invalid_wire_value(
             path,
@@ -1648,23 +2222,81 @@ fn validate_wire_array(
     let Value::Array(values) = value else {
         return invalid_wire_value(path, "expected an array", source_path);
     };
+    let length = u64::try_from(values.len()).unwrap_or(u64::MAX);
+    if let Some(minimum) = schema
+        .get("minItems")
+        .and_then(non_negative_safe_schema_integer)
+        && length < minimum
+    {
+        return invalid_wire_value(path, "array has fewer items than minItems", source_path);
+    }
+    if let Some(maximum) = schema
+        .get("maxItems")
+        .and_then(non_negative_safe_schema_integer)
+        && length > maximum
+    {
+        return invalid_wire_value(path, "array has more items than maxItems", source_path);
+    }
+    if schema.get("uniqueItems") == Some(&Value::Bool(true)) {
+        let mut fingerprints = HashSet::with_capacity(values.len());
+        for value in values {
+            if !fingerprints.insert(portable_json_fingerprint(value)) {
+                return invalid_wire_value(path, "array items must be unique", source_path);
+            }
+        }
+    }
     if let Some(items) = schema.get("items") {
         for (index, item) in values.iter().enumerate() {
             validate_wire_value_inner(items, item, &format!("{path}[{index}]"), source_path)?;
         }
     }
-    let length = u64::try_from(values.len()).unwrap_or(u64::MAX);
-    if let Some(minimum) = schema.get("minItems").and_then(Value::as_u64)
-        && length < minimum
-    {
-        return invalid_wire_value(path, "array has fewer items than minItems", source_path);
-    }
-    if let Some(maximum) = schema.get("maxItems").and_then(Value::as_u64)
-        && length > maximum
-    {
-        return invalid_wire_value(path, "array has more items than maxItems", source_path);
-    }
     Ok(())
+}
+
+fn portable_json_fingerprint(value: &Value) -> String {
+    let mut output = String::new();
+    write_portable_json_fingerprint(value, &mut output);
+    output
+}
+
+fn portable_json_semantic_equal(left: &Value, right: &Value) -> bool {
+    portable_json_fingerprint(left) == portable_json_fingerprint(right)
+}
+
+fn write_portable_json_fingerprint(value: &Value, output: &mut String) {
+    match value {
+        Value::Null => output.push('n'),
+        Value::Bool(value) => output.push_str(if *value { "b1" } else { "b0" }),
+        Value::Number(value) => {
+            let number = value
+                .as_f64()
+                .expect("portable JSON numbers are representable as f64");
+            let bits = if number == 0.0 { 0 } else { number.to_bits() };
+            write!(output, "d{bits:016x};").expect("writing to a String cannot fail");
+        }
+        Value::String(value) => {
+            write!(output, "s{}:", value.len()).expect("writing to a String cannot fail");
+            output.push_str(value);
+        }
+        Value::Array(values) => {
+            write!(output, "a{}[", values.len()).expect("writing to a String cannot fail");
+            for value in values {
+                write_portable_json_fingerprint(value, output);
+            }
+            output.push(']');
+        }
+        Value::Object(values) => {
+            let mut entries = values.iter().collect::<Vec<_>>();
+            entries.sort_unstable_by_key(|(key, _)| *key);
+            write!(output, "o{}{{", entries.len()).expect("writing to a String cannot fail");
+            for (key, value) in entries {
+                write!(output, "k{}:", key.len()).expect("writing to a String cannot fail");
+                output.push_str(key);
+                write_portable_json_fingerprint(value, output);
+            }
+            output.push('}');
+        }
+    }
 }
 
 fn validate_wire_string(
@@ -1677,13 +2309,25 @@ fn validate_wire_string(
         return invalid_wire_value(path, "expected a string", source_path);
     };
     validate_string_format(schema, value, path, source_path)?;
+    if let Some(pattern) = schema.get("pattern").and_then(Value::as_str) {
+        let Ok(pattern) = compile_portable_pattern(pattern) else {
+            return invalid_wire_value(path, "Schema pattern could not be compiled", source_path);
+        };
+        if !pattern.is_match(value) {
+            return invalid_wire_value(path, "string does not match pattern", source_path);
+        }
+    }
     let length = u64::try_from(value.chars().count()).unwrap_or(u64::MAX);
-    if let Some(minimum) = schema.get("minLength").and_then(Value::as_u64)
+    if let Some(minimum) = schema
+        .get("minLength")
+        .and_then(non_negative_safe_schema_integer)
         && length < minimum
     {
         return invalid_wire_value(path, "string is shorter than minLength", source_path);
     }
-    if let Some(maximum) = schema.get("maxLength").and_then(Value::as_u64)
+    if let Some(maximum) = schema
+        .get("maxLength")
+        .and_then(non_negative_safe_schema_integer)
         && length > maximum
     {
         return invalid_wire_value(path, "string is longer than maxLength", source_path);
@@ -1900,7 +2544,11 @@ fn is_iso8601_duration(value: &str) -> bool {
     index += 1;
     let mut in_time = false;
     let mut saw_component = false;
-    let mut saw_time = false;
+    let mut saw_time_component = false;
+    let mut last_date_order = None;
+    let mut last_time_order = None;
+    let mut saw_week = false;
+    let mut saw_other_date_unit = false;
     while index < bytes.len() {
         if bytes[index] == b'T' {
             if in_time || index + 1 == bytes.len() {
@@ -1910,33 +2558,73 @@ fn is_iso8601_duration(value: &str) -> bool {
             index += 1;
             continue;
         }
-        let start = index;
-        let mut separator_seen = false;
-        while index < bytes.len()
-            && (bytes[index].is_ascii_digit() || (!separator_seen && bytes[index] == b'.'))
-        {
-            separator_seen |= bytes[index] == b'.';
+        let digit_start = index;
+        while bytes.get(index).is_some_and(u8::is_ascii_digit) {
             index += 1;
         }
-        if index == start || bytes.get(index).is_none() {
+        if index == digit_start {
             return false;
         }
-        let unit = bytes[index];
-        let valid_unit = if in_time {
-            matches!(unit, b'H' | b'M' | b'S')
-        } else {
-            matches!(unit, b'Y' | b'M' | b'W' | b'D')
+
+        let mut fractional = false;
+        if bytes.get(index) == Some(&b'.') {
+            fractional = true;
+            index += 1;
+            let fraction_start = index;
+            while bytes.get(index).is_some_and(u8::is_ascii_digit) {
+                index += 1;
+            }
+            if index == fraction_start {
+                return false;
+            }
+        }
+
+        let Some(&unit) = bytes.get(index) else {
+            return false;
         };
-        if !valid_unit {
-            return false;
-        }
         if in_time {
-            saw_time = true;
+            let order = match unit {
+                b'H' => 0,
+                b'M' => 1,
+                b'S' => 2,
+                _ => return false,
+            };
+            if last_time_order.is_some_and(|previous| order <= previous) {
+                return false;
+            }
+            last_time_order = Some(order);
+            saw_time_component = true;
+        } else {
+            let order = match unit {
+                b'Y' => 0,
+                b'M' => 1,
+                b'W' => 2,
+                b'D' => 3,
+                _ => return false,
+            };
+            if last_date_order.is_some_and(|previous| order <= previous) {
+                return false;
+            }
+            last_date_order = Some(order);
+            if unit == b'W' {
+                if saw_other_date_unit || index + 1 != bytes.len() {
+                    return false;
+                }
+                saw_week = true;
+            } else {
+                if saw_week {
+                    return false;
+                }
+                saw_other_date_unit = true;
+            }
         }
         saw_component = true;
         index += 1;
+        if fractional && index != bytes.len() {
+            return false;
+        }
     }
-    saw_component && (!in_time || saw_time)
+    saw_component && (!in_time || saw_time_component)
 }
 
 fn validate_portable_value(value: &Value, path: String) -> Result<(), CodegenError> {

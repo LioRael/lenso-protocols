@@ -12,7 +12,7 @@ mod strict_json;
 pub use proof::{
     canonicalize_proof_value, child_proof_message, handshake_params_digest, host_proof_message,
 };
-pub use strict_json::{decode_strict, encode_compact};
+pub use strict_json::{MAX_STRICT_JSON_NESTING, decode_strict, encode_compact};
 
 /// Exact Process Protocol profile selected by an Adapter.
 pub const PROCESS_PROFILE: &str = "lenso-process-jsonrpc-http-v1";

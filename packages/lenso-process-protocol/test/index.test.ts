@@ -46,7 +46,7 @@ function identity(): HandshakeIdentity {
 
 test("strict JSON parsing rejects duplicate keys recursively", () => {
   expect(() => parseStrictJson('{"payload":{"key":1,"key":2}}')).toThrow(
-    "duplicate object key",
+    "invalid strict JSON",
   );
 });
 

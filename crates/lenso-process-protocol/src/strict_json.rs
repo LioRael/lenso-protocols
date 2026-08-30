@@ -4,12 +4,17 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use super::ProtocolError;
 
+/// Maximum nested object/array container count accepted by the strict JSON profile.
+///
+/// `serde_json`'s 128-level recursion limit includes the scalar leaf, leaving
+/// room for at most 127 containers around it.
+pub const MAX_STRICT_JSON_NESTING: usize = 127;
+
 /// Decodes strict JSON, rejecting duplicate object keys before typed decoding.
 pub fn decode_strict<T: DeserializeOwned>(wire: &[u8]) -> Result<T, ProtocolError> {
     serde_json::from_slice::<StrictValue>(wire)
-        .map_err(|error| ProtocolError::new(format!("invalid strict JSON: {error}")))?;
-    serde_json::from_slice(wire)
-        .map_err(|error| ProtocolError::new(format!("invalid protocol document: {error}")))
+        .map_err(|_| ProtocolError::new("invalid strict JSON"))?;
+    serde_json::from_slice(wire).map_err(|_| ProtocolError::new("invalid protocol document"))
 }
 
 /// Encodes an already validated protocol document as compact JSON.
@@ -78,10 +83,8 @@ impl<'de> serde::de::Visitor<'de> for StrictValueVisitor {
     {
         let mut keys = HashSet::new();
         while let Some(key) = map.next_key::<String>()? {
-            if !keys.insert(key.clone()) {
-                return Err(serde::de::Error::custom(format!(
-                    "duplicate object key {key:?}"
-                )));
+            if !keys.insert(key) {
+                return Err(serde::de::Error::custom("duplicate object key"));
             }
             map.next_value::<StrictValue>()?;
         }
