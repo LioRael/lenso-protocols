@@ -20,21 +20,30 @@ export interface InvocationContext {
   readonly extensions?: Record<string, unknown>;
 }
 
-export type RuntimeFailureKind =
-  | "unavailable"
-  | "unknown_operation"
-  | "ambiguous_binding"
-  | "protocol_violation"
-  | "missing_plugin_factory"
-  | "unavailable_execution_class"
-  | "invalid_resolved_plan"
-  | "admission_closed"
-  | "resource_exhausted"
-  | "deadline_exceeded"
-  | "cancelled"
-  | "internal"
-  | "plugin_failure"
-  | "plugin_restart_exhausted";
+/** Canonical Runtime Failure kinds accepted by portable clients. */
+export const runtimeFailureKinds = Object.freeze([
+  "unavailable",
+  "unknown_operation",
+  "ambiguous_binding",
+  "protocol_violation",
+  "missing_plugin_factory",
+  "unavailable_execution_class",
+  "invalid_resolved_plan",
+  "admission_closed",
+  "resource_exhausted",
+  "deadline_exceeded",
+  "cancelled",
+  "internal",
+  "plugin_failure",
+  "plugin_restart_exhausted",
+] as const);
+
+export type RuntimeFailureKind = (typeof runtimeFailureKinds)[number];
+
+/** Returns whether a wire value names a canonical Runtime Failure kind. */
+export function isRuntimeFailureKind(value: unknown): value is RuntimeFailureKind {
+  return runtimeFailureKinds.some((kind) => kind === value);
+}
 
 /** Runtime-owned failure, separate from Capability-defined Domain Errors. */
 export interface RuntimeFailure {

@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
 import fixture from "./conformance.json";
+import strictJsonFixture from "./strict-json-conformance.json";
 import {
   childProofMessage,
   encodeBase64Url,
   handshakeProofPayload,
   hostProofMessage,
+  parseStrictJson,
   validateHandshakeIdentity,
   type HandshakeIdentity,
 } from "@lenso/process-protocol";
@@ -33,4 +35,20 @@ test("TypeScript matches the Process Protocol V1 proof vectors", () => {
   expect(hex(childMessage)).toBe(fixture.child_message_hex);
   expect(proof(hostMessage)).toBe(fixture.host_proof);
   expect(proof(childMessage)).toBe(fixture.child_proof);
+});
+
+test("TypeScript matches the shared strict JSON conformance corpus", () => {
+  for (const vector of strictJsonFixture) {
+    try {
+      parseStrictJson(vector.wire);
+      expect(vector.accepted, vector.name).toBeTrue();
+    } catch (error) {
+      expect(vector.accepted, vector.name).toBeFalse();
+      const message = error instanceof Error ? error.message : String(error);
+      expect(message, vector.name).toBe("invalid strict JSON");
+      if (vector.forbidden_error_fragment) {
+        expect(message, vector.name).not.toContain(vector.forbidden_error_fragment);
+      }
+    }
+  }
 });

@@ -23,11 +23,18 @@ import {
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 const TOKEN = /^[A-Za-z0-9._@/:-]{1,256}$/;
+// serde_json's 128-level recursion limit includes the scalar leaf, so peers
+// accept at most 127 nested object/array containers.
+const MAX_STRICT_JSON_NESTING = 127;
 
 /** Parses JSON after rejecting duplicate object keys at every nesting level. */
 export function parseStrictJson(wire: string): unknown {
-  new StrictJsonScanner(wire).scan();
-  return JSON.parse(wire) as unknown;
+  try {
+    new StrictJsonScanner(wire).scan();
+    return JSON.parse(wire) as unknown;
+  } catch {
+    throw new Error("invalid strict JSON");
+  }
 }
 
 /** Validates the dedicated one-line readiness record. */
@@ -430,16 +437,22 @@ class StrictJsonScanner {
 
   scan(): void {
     this.whitespace();
-    this.value();
+    this.value(0);
     this.whitespace();
     if (this.index !== this.wire.length) throw new Error("trailing JSON input");
   }
 
-  private value(): void {
+  private value(depth: number): void {
     this.whitespace();
     const candidate = this.wire[this.index];
-    if (candidate === "{") return this.object();
-    if (candidate === "[") return this.array();
+    if (candidate === "{") {
+      if (depth >= MAX_STRICT_JSON_NESTING) throw new Error("JSON nesting is too deep");
+      return this.object(depth + 1);
+    }
+    if (candidate === "[") {
+      if (depth >= MAX_STRICT_JSON_NESTING) throw new Error("JSON nesting is too deep");
+      return this.array(depth + 1);
+    }
     if (candidate === '"') {
       this.string();
       return;
@@ -450,7 +463,7 @@ class StrictJsonScanner {
     this.number();
   }
 
-  private object(): void {
+  private object(depth: number): void {
     this.index += 1;
     this.whitespace();
     const keys = new Set<string>();
@@ -460,11 +473,11 @@ class StrictJsonScanner {
     }
     while (true) {
       const key = this.string();
-      if (keys.has(key)) throw new Error(`duplicate object key ${JSON.stringify(key)}`);
+      if (keys.has(key)) throw new Error("duplicate object key");
       keys.add(key);
       this.whitespace();
       this.expect(":");
-      this.value();
+      this.value(depth);
       this.whitespace();
       if (this.wire[this.index] === "}") {
         this.index += 1;
@@ -475,7 +488,7 @@ class StrictJsonScanner {
     }
   }
 
-  private array(): void {
+  private array(depth: number): void {
     this.index += 1;
     this.whitespace();
     if (this.wire[this.index] === "]") {
@@ -483,7 +496,7 @@ class StrictJsonScanner {
       return;
     }
     while (true) {
-      this.value();
+      this.value(depth);
       this.whitespace();
       if (this.wire[this.index] === "]") {
         this.index += 1;
@@ -510,6 +523,28 @@ class StrictJsonScanner {
         if (escape === "u") {
           const hex = this.wire.slice(this.index + 1, this.index + 5);
           if (!/^[0-9A-Fa-f]{4}$/.test(hex)) throw new Error("invalid JSON unicode escape");
+          const codeUnit = Number.parseInt(hex, 16);
+          if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+            if (
+              this.wire[this.index + 5] !== "\\" ||
+              this.wire[this.index + 6] !== "u"
+            ) {
+              throw new Error("unpaired JSON surrogate");
+            }
+            const lowHex = this.wire.slice(this.index + 7, this.index + 11);
+            if (!/^[0-9A-Fa-f]{4}$/.test(lowHex)) {
+              throw new Error("invalid JSON unicode escape");
+            }
+            const lowCodeUnit = Number.parseInt(lowHex, 16);
+            if (lowCodeUnit < 0xdc00 || lowCodeUnit > 0xdfff) {
+              throw new Error("unpaired JSON surrogate");
+            }
+            this.index += 11;
+            continue;
+          }
+          if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+            throw new Error("unpaired JSON surrogate");
+          }
           this.index += 5;
           continue;
         }
@@ -518,6 +553,18 @@ class StrictJsonScanner {
         continue;
       }
       if (character.charCodeAt(0) < 0x20) throw new Error("unescaped JSON control character");
+      const codeUnit = character.charCodeAt(0);
+      if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+        const lowCodeUnit = this.wire.charCodeAt(this.index + 1);
+        if (lowCodeUnit < 0xdc00 || lowCodeUnit > 0xdfff) {
+          throw new Error("unpaired JSON surrogate");
+        }
+        this.index += 2;
+        continue;
+      }
+      if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+        throw new Error("unpaired JSON surrogate");
+      }
       this.index += 1;
     }
     throw new Error("unterminated JSON string");
@@ -528,7 +575,9 @@ class StrictJsonScanner {
       this.wire.slice(this.index),
     );
     if (!match) throw new Error("invalid JSON value");
-    this.index += match[0].length;
+    const lexeme = match[0];
+    if (!Number.isFinite(Number(lexeme))) throw new Error("JSON number is out of range");
+    this.index += lexeme.length;
   }
 
   private literal(value: string): void {
