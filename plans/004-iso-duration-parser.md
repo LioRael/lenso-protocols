@@ -42,7 +42,7 @@ arithmetic, normalization, or accepting locale-specific syntax.
 ## Verification
 
 - `bun test packages/lenso-contract-runtime/test/browser.test.ts` -> all pass.
-- `/Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo test -p lenso-contract-codegen` -> all pass.
+- `cargo test -p lenso-contract-codegen` -> all pass.
 - `bun run typecheck && git diff --check` -> exit 0/no output.
 
 ## STOP conditions
