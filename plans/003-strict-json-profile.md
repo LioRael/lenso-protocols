@@ -43,7 +43,7 @@ canonical encoding.
 ## Verification
 
 - `bun test packages/lenso-process-protocol/test fixtures/process-protocol/conformance.test.ts` -> all pass.
-- `/Users/leosouthey/Projects/framework/.lenso-tools/bin/lenso-cargo test -p lenso-process-protocol` -> all pass.
+- `cargo test -p lenso-process-protocol` -> all pass.
 - `bun run typecheck && git diff --check` -> exit 0/no output.
 
 ## STOP conditions
