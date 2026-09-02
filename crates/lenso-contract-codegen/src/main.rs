@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env,
     path::{Path, PathBuf},
     process::{Command, ExitCode},
@@ -15,6 +16,7 @@ fn usage() -> &'static str {
 
 #[derive(Debug)]
 struct WorkspaceContract {
+    package: String,
     descriptor: PathBuf,
     language: ProjectionLanguage,
     output: PathBuf,
@@ -92,8 +94,9 @@ fn workspace(arguments: &[String]) -> Result<(), String> {
             manifest.display()
         ));
     }
+    let mut failures = Vec::new();
     for contract in contracts {
-        match action {
+        let result = match action {
             Some("check") => {
                 check_projection(&contract.descriptor, contract.language, &contract.output)
             }
@@ -101,14 +104,25 @@ fn workspace(arguments: &[String]) -> Result<(), String> {
                 write_projection(&contract.descriptor, contract.language, &contract.output)
             }
             _ => unreachable!("workspace action was validated"),
+        };
+        match result {
+            Ok(()) => println!(
+                "{} {} -> {}",
+                action.expect("workspace action was validated"),
+                contract.descriptor.display(),
+                contract.output.display()
+            ),
+            Err(error) => failures.push(format!(
+                "package `{}` ({} -> {}): {error}",
+                contract.package,
+                contract.descriptor.display(),
+                contract.output.display()
+            )),
         }
-        .map_err(|error| error.to_string())?;
-        println!(
-            "{} {} -> {}",
-            action.expect("workspace action was validated"),
-            contract.descriptor.display(),
-            contract.output.display()
-        );
+    }
+    if !failures.is_empty() {
+        failures.sort();
+        return Err(failures.join("\n"));
     }
     Ok(())
 }
@@ -134,9 +148,12 @@ fn workspace_contracts(manifest: &Path) -> Result<Vec<WorkspaceContract>, String
     }
     let metadata: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("decode Cargo metadata: {error}"))?;
-    let packages = metadata["packages"]
+    let mut packages = metadata["packages"]
         .as_array()
-        .ok_or_else(|| "Cargo metadata omitted `packages`".to_owned())?;
+        .ok_or_else(|| "Cargo metadata omitted `packages`".to_owned())?
+        .iter()
+        .collect::<Vec<_>>();
+    packages.sort_by_key(|package| package["manifest_path"].as_str().unwrap_or_default());
     let mut contracts = Vec::new();
     for package in packages {
         let Some(contract) = package
@@ -170,13 +187,54 @@ fn workspace_contracts(manifest: &Path) -> Result<Vec<WorkspaceContract>, String
             value => return Err(format!("unsupported contract projection `{value}`")),
         };
         contracts.push(WorkspaceContract {
-            descriptor: root.join(field("descriptor")?),
+            package: package["name"].as_str().unwrap_or("unknown").to_owned(),
+            descriptor: normalize_path(&root.join(field("descriptor")?)),
             language,
-            output: root.join(field("output")?),
+            output: normalize_path(&root.join(field("output")?)),
         });
     }
-    contracts.sort_by(|left, right| left.descriptor.cmp(&right.descriptor));
+    contracts.sort_by(|left, right| {
+        left.descriptor
+            .cmp(&right.descriptor)
+            .then_with(|| left.output.cmp(&right.output))
+            .then_with(|| left.package.cmp(&right.package))
+    });
+    let mut output_owners = BTreeMap::<PathBuf, Vec<&str>>::new();
+    for contract in &contracts {
+        output_owners
+            .entry(contract.output.clone())
+            .or_default()
+            .push(&contract.package);
+    }
+    let duplicates = output_owners
+        .into_iter()
+        .filter(|(_, owners)| owners.len() > 1)
+        .map(|(output, owners)| {
+            format!(
+                "generated output `{}` has multiple owners: {}",
+                output.display(),
+                owners.join(", ")
+            )
+        })
+        .collect::<Vec<_>>();
+    if !duplicates.is_empty() {
+        return Err(duplicates.join("\n"));
+    }
     Ok(contracts)
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
 }
 
 fn main() -> ExitCode {
@@ -194,6 +252,53 @@ mod tests {
     use super::*;
 
     const FIXTURE: &str = "tests/fixtures/profile/capability.json";
+
+    fn write_workspace(root: &Path, members: &[&str]) -> PathBuf {
+        let members = members
+            .iter()
+            .map(|member| format!("\"{member}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let manifest = root.join("Cargo.toml");
+        std::fs::write(
+            &manifest,
+            format!("[workspace]\nmembers = [{members}]\nresolver = \"3\"\n"),
+        )
+        .unwrap();
+        manifest
+    }
+
+    fn write_package(root: &Path, name: &str, projection: &str, output: &str) {
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir(root.join("schemas")).unwrap();
+        std::fs::write(root.join("src/lib.rs"), "").unwrap();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[package.metadata.lenso.contract]\ndescriptor = \"capability.json\"\nprojection = \"{projection}\"\noutput = \"{output}\"\n"
+            ),
+        )
+        .unwrap();
+        let fixture = Path::new(FIXTURE).parent().unwrap();
+        std::fs::copy(
+            fixture.join("capability.json"),
+            root.join("capability.json"),
+        )
+        .unwrap();
+        for entry in std::fs::read_dir(fixture.join("schemas")).unwrap() {
+            let entry = entry.unwrap();
+            std::fs::copy(entry.path(), root.join("schemas").join(entry.file_name())).unwrap();
+        }
+    }
+
+    fn workspace_arguments(action: &str, manifest: &Path) -> Vec<String> {
+        vec![
+            "workspace".to_owned(),
+            action.to_owned(),
+            "--manifest-path".to_owned(),
+            manifest.display().to_string(),
+        ]
+    }
 
     #[test]
     fn one_language_projection_does_not_require_a_peer_output() {
@@ -304,5 +409,90 @@ output = "src/generated.rs"
         ])
         .expect("workspace check should discover the declared contract");
         assert!(root.path().join("src/generated.rs").is_file());
+    }
+
+    #[test]
+    fn workspace_commands_check_multiple_packages() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = write_workspace(root.path(), &["alpha", "beta"]);
+        write_package(
+            &root.path().join("alpha"),
+            "alpha",
+            "rust",
+            "src/generated.rs",
+        );
+        write_package(
+            &root.path().join("beta"),
+            "beta",
+            "rust",
+            "src/generated.rs",
+        );
+
+        run(&workspace_arguments("generate", &manifest)).unwrap();
+        run(&workspace_arguments("check", &manifest)).unwrap();
+
+        assert!(root.path().join("alpha/src/generated.rs").is_file());
+        assert!(root.path().join("beta/src/generated.rs").is_file());
+    }
+
+    #[test]
+    fn workspace_check_reports_stale_and_missing_inputs_deterministically() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = write_workspace(root.path(), &["alpha", "beta"]);
+        write_package(
+            &root.path().join("alpha"),
+            "alpha",
+            "rust",
+            "src/generated.rs",
+        );
+        write_package(
+            &root.path().join("beta"),
+            "beta",
+            "rust",
+            "src/generated.rs",
+        );
+        run(&workspace_arguments("generate", &manifest)).unwrap();
+        std::fs::write(root.path().join("alpha/src/generated.rs"), "stale").unwrap();
+        std::fs::remove_file(root.path().join("beta/capability.json")).unwrap();
+
+        let first = run(&workspace_arguments("check", &manifest)).unwrap_err();
+        let second = run(&workspace_arguments("check", &manifest)).unwrap_err();
+
+        assert_eq!(first, second);
+        assert!(first.contains("package `alpha`"));
+        assert!(first.contains("package `beta`"));
+    }
+
+    #[test]
+    fn workspace_metadata_rejects_an_invalid_projection() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = write_workspace(root.path(), &["alpha"]);
+        write_package(
+            &root.path().join("alpha"),
+            "alpha",
+            "swift",
+            "src/generated.rs",
+        );
+
+        let error = workspace_contracts(&manifest).unwrap_err();
+
+        assert_eq!(error, "unsupported contract projection `swift`");
+    }
+
+    #[test]
+    fn workspace_metadata_rejects_duplicate_output_ownership() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = write_workspace(root.path(), &["alpha", "beta"]);
+        write_package(
+            &root.path().join("alpha"),
+            "alpha",
+            "rust",
+            "../generated.rs",
+        );
+        write_package(&root.path().join("beta"), "beta", "rust", "../generated.rs");
+
+        let error = workspace_contracts(&manifest).unwrap_err();
+
+        assert!(error.contains("multiple owners: alpha, beta"));
     }
 }
