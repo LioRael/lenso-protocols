@@ -52,6 +52,9 @@ jobs:
           bun run typecheck
           bun run package-smoke
           bun run test
-          npm pack --dry-run "./${PACKAGE_DIR}"
+          package_tarball="$(npm pack --json --ignore-scripts "./${PACKAGE_DIR}" --pack-destination "$RUNNER_TEMP" | jq -r '.[0].filename')"
+          test -n "$package_tarball"
+          test -f "$RUNNER_TEMP/$package_tarball"
+          echo "PACKAGE_TARBALL=$RUNNER_TEMP/$package_tarball" >> "$GITHUB_ENV"
       - name: Publish package
-        run: npm publish "./${PACKAGE_DIR}" --access public --provenance
+        run: npm publish "$PACKAGE_TARBALL" --access public --provenance
