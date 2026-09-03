@@ -360,15 +360,17 @@ const PORTABLE_UNICODE_PROPERTY_ESCAPE = "\\p{Letter}";
 /**
  * Accepts only regular-expression syntax with shared Rust `regex` and
  * ECMAScript Unicode-mode semantics. Engine-specific shorthand classes and
- * anchors, wildcard dots, lookarounds, backreferences, flags, and
- * backtracking-unsafe repetition shapes fail closed.
+ * internal anchors, wildcard dots, lookarounds, backreferences, flags, and
+ * backtracking-unsafe repetition shapes fail closed. Fully anchored patterns
+ * may use the complete safe subset; start-anchored prefix patterns are limited
+ * to fixed-shape expressions.
  * The shared `^`/`$` anchors remain allowed; `$` is normalized below to Rust's
  * absolute end-of-input behavior before the browser engine sees it.
  */
 function hasPortablePatternSyntax(pattern: string): boolean {
   if (
     Array.from(pattern).length > MAX_PORTABLE_PATTERN_CODE_POINTS ||
-    !hasPortableOuterAnchors(pattern)
+    pattern[0] !== "^"
   ) {
     return false;
   }
@@ -515,13 +517,21 @@ function hasPortablePatternSyntax(pattern: string): boolean {
       index = close + 1;
       continue;
     }
-    if (character === "^" || character === "$") {
+    if (character === "^" && index === 0) {
       const frame = frames[frames.length - 1];
       if (frame === undefined) return false;
       frame.lastAtom = undefined;
       index += 1;
       continue;
     }
+    if (character === "$" && isPortableEndAnchor(pattern, index)) {
+      const frame = frames[frames.length - 1];
+      if (frame === undefined) return false;
+      frame.lastAtom = undefined;
+      index += 1;
+      continue;
+    }
+    if (character === "^" || character === "$") return false;
 
     const codePoint = pattern.codePointAt(index);
     if (!isPortablePatternCodePoint(codePoint)) return false;
@@ -532,11 +542,19 @@ function hasPortablePatternSyntax(pattern: string): boolean {
     index += (codePoint as number) > 0xffff ? 2 : 1;
   }
 
-  return !inClass && frames.length === 1;
+  if (inClass || frames.length !== 1) return false;
+  const frame = frames[0];
+  if (frame === undefined) return false;
+  return (
+    hasPortableEndAnchor(pattern) ||
+    (frame.lastAtom !== undefined &&
+      !frame.containsVariableRepetition &&
+      !frame.containsAlternation)
+  );
 }
 
-function hasPortableOuterAnchors(pattern: string): boolean {
-  if (pattern[0] !== "^" || pattern[pattern.length - 1] !== "$") return false;
+function hasPortableEndAnchor(pattern: string): boolean {
+  if (pattern[pattern.length - 1] !== "$") return false;
   let precedingBackslashes = 0;
   for (
     let index = pattern.length - 2;
@@ -546,6 +564,10 @@ function hasPortableOuterAnchors(pattern: string): boolean {
     precedingBackslashes += 1;
   }
   return precedingBackslashes % 2 === 0;
+}
+
+function isPortableEndAnchor(pattern: string, index: number): boolean {
+  return index === pattern.length - 1 && hasPortableEndAnchor(pattern);
 }
 
 interface PortablePatternAtom {
