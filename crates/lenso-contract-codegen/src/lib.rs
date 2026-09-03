@@ -1141,9 +1141,11 @@ fn validate_schema_type(schema_type: &str, source_path: &Path) -> Result<(), Cod
 
 /// Compiles only the regular-expression syntax whose match semantics are shared
 /// by Rust `regex` and ECMAScript Unicode-mode `RegExp` for portable Schemas.
-/// Engine-specific shorthand classes, anchors, wildcard dots, lookarounds,
-/// backreferences, inline flags, and backtracking-unsafe repetition shapes fail
-/// closed before either runtime uses them.
+/// Engine-specific shorthand classes, internal anchors, wildcard dots,
+/// lookarounds, backreferences, inline flags, and backtracking-unsafe
+/// repetition shapes fail closed before either runtime uses them. Fully
+/// anchored patterns may use the complete safe subset; start-anchored prefix
+/// patterns are limited to fixed-shape expressions.
 fn compile_portable_pattern(pattern: &str) -> Result<Regex, String> {
     if !has_portable_pattern_syntax(pattern) {
         return Err("pattern uses syntax outside the shared Rust/ECMAScript subset".to_owned());
@@ -1210,7 +1212,8 @@ impl PortableRepetition {
     reason = "keeping the single-pass scanner locally isomorphic with the TypeScript gate makes parity auditable"
 )]
 fn has_portable_pattern_syntax(pattern: &str) -> bool {
-    if pattern.chars().count() > MAX_PORTABLE_PATTERN_CHARS || !has_portable_outer_anchors(pattern)
+    if pattern.chars().count() > MAX_PORTABLE_PATTERN_CHARS
+        || pattern.as_bytes().first() != Some(&b'^')
     {
         return false;
     }
@@ -1426,13 +1429,21 @@ fn has_portable_pattern_syntax(pattern: &str) -> bool {
                 }
                 index = close + 1;
             }
-            b'^' | b'$' => {
+            b'^' if index == 0 => {
                 let Some(frame) = frames.last_mut() else {
                     return false;
                 };
                 frame.last_atom = None;
                 index += 1;
             }
+            b'$' if is_portable_end_anchor(pattern, index) => {
+                let Some(frame) = frames.last_mut() else {
+                    return false;
+                };
+                frame.last_atom = None;
+                index += 1;
+            }
+            b'^' | b'$' => return false,
             byte if byte.is_ascii_control() => return false,
             byte if byte.is_ascii() => {
                 let Some(frame) = frames.last_mut() else {
@@ -1461,12 +1472,19 @@ fn has_portable_pattern_syntax(pattern: &str) -> bool {
         }
     }
 
-    !in_class && frames.len() == 1
+    if in_class || frames.len() != 1 {
+        return false;
+    }
+    let frame = &frames[0];
+    has_portable_end_anchor(pattern)
+        || (frame.last_atom.is_some()
+            && !frame.contains_variable_repetition
+            && !frame.contains_alternation)
 }
 
-fn has_portable_outer_anchors(pattern: &str) -> bool {
+fn has_portable_end_anchor(pattern: &str) -> bool {
     let bytes = pattern.as_bytes();
-    if bytes.first() != Some(&b'^') || bytes.last() != Some(&b'$') {
+    if bytes.last() != Some(&b'$') {
         return false;
     }
     bytes[..bytes.len() - 1]
@@ -1476,6 +1494,10 @@ fn has_portable_outer_anchors(pattern: &str) -> bool {
         .count()
         % 2
         == 0
+}
+
+fn is_portable_end_anchor(pattern: &str, index: usize) -> bool {
+    index + 1 == pattern.len() && has_portable_end_anchor(pattern)
 }
 
 fn push_portable_pattern_atom(

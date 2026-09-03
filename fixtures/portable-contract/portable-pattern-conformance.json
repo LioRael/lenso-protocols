@@ -30,6 +30,7 @@
     "sample": "Καλημέρα",
     "accepted": true
   },
+  { "name": "path-prefix", "pattern": "^/", "sample": "/health", "accepted": true },
   {
     "name": "simple-repeated-group",
     "pattern": "^(ab)+$",
@@ -127,15 +128,22 @@
     "accepted": false
   },
   {
+    "name": "prefix-variable-repetition",
+    "pattern": "^a+",
+    "sample": "aaaa",
+    "accepted": false
+  },
+  {
     "name": "top-level-alternation",
     "pattern": "^a|b$",
     "sample": "a",
     "accepted": false
   },
   {
-    "name": "escaped-terminal-dollar",
+    "name": "literal-dollar-prefix",
     "pattern": "^price:\\$",
     "sample": "price:$",
-    "accepted": false
-  }
+    "accepted": true
+  },
+  { "name": "internal-anchor", "pattern": "^a$b", "sample": "ab", "accepted": false }
 ]
