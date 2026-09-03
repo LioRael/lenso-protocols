@@ -892,6 +892,7 @@ const SUPPORTED_SCHEMA_KEYWORDS: &[&str] = &[
     "oneOf",
     "pattern",
     "properties",
+    "propertyNames",
     "required",
     "then",
     "type",
@@ -1136,6 +1137,9 @@ fn validate_schema_children(
     {
         validate_schema_profile(additional, source_path)?;
     }
+    if let Some(property_names) = object.get("propertyNames") {
+        validate_schema_profile(property_names, source_path)?;
+    }
     if object.contains_key("then") || object.contains_key("else") {
         let Some(condition) = object.get("if") else {
             return Err(unsupported_schema(
@@ -1362,7 +1366,6 @@ fn has_portable_pattern_syntax(pattern: &str) -> bool {
                 class_start = Some(index + 1);
                 index += 1;
             }
-            b']' | b'}' | b'.' => return false,
             b'(' => {
                 if bytes.get(index + 1) == Some(&b'?') {
                     if !pattern[index..].starts_with("(?:") {
@@ -1471,7 +1474,7 @@ fn has_portable_pattern_syntax(pattern: &str) -> bool {
                 frame.last_atom = None;
                 index += 1;
             }
-            b'^' | b'$' => return false,
+            b']' | b'}' | b'.' | b'^' | b'$' => return false,
             byte if byte.is_ascii_control() => return false,
             byte if byte.is_ascii() => {
                 let Some(frame) = frames.last_mut() else {
@@ -2273,6 +2276,14 @@ fn validate_wire_object(
         .cloned()
         .unwrap_or_default();
     for (field, field_value) in properties {
+        if let Some(property_names) = schema.get("propertyNames") {
+            validate_wire_value_inner(
+                property_names,
+                &Value::String(field.clone()),
+                &format!("{path}.{field}"),
+                source_path,
+            )?;
+        }
         if let Some(field_schema) = declared.get(field) {
             validate_wire_value_inner(
                 field_schema,

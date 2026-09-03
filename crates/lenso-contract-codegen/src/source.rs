@@ -258,6 +258,7 @@ fn ordered_keys(object: &Map<String, Value>, context: RenderContext) -> Vec<&str
             "maximum",
             "required",
             "properties",
+            "propertyNames",
             "additionalProperties",
             "minLength",
             "maxLength",
