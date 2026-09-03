@@ -912,6 +912,11 @@ const HARMLESS_SCHEMA_ANNOTATIONS: &[&str] = &[
     "readOnly",
     "title",
     "writeOnly",
+    "x-lenso-max-container-items",
+    "x-lenso-max-depth",
+    "x-lenso-max-encoded-bytes",
+    "x-lenso-max-nodes",
+    "x-lenso-max-string-length",
     "x-lenso-sensitive",
 ];
 
