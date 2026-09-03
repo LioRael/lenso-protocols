@@ -1064,6 +1064,25 @@ fn wire_object_cardinality_constraints_are_enforced() {
 }
 
 #[test]
+fn wire_property_name_constraints_are_enforced() {
+    let schema = temporary_schema(
+        "property-names",
+        r#"{
+          "type":"object",
+          "propertyNames":{"type":"string","maxLength":4},
+          "additionalProperties":true
+        }"#,
+    );
+
+    validate_wire_value(&schema, &json!({"four":"value"}))
+        .expect("a property name within the bound should pass");
+    validate_wire_value(&schema, &json!({"five5":"value"}))
+        .expect_err("an oversized property name must fail");
+
+    remove_temporary_schema(&schema);
+}
+
+#[test]
 fn schema_profile_rejects_invalid_object_cardinality_bounds() {
     for (label, source) in [
         (
