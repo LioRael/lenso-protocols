@@ -1037,6 +1037,52 @@ fn wire_conditionals_preserve_cross_field_constraints() {
 }
 
 #[test]
+fn wire_object_cardinality_constraints_are_enforced() {
+    let schema = temporary_schema(
+        "object-cardinality",
+        r#"{
+          "type":"object",
+          "minProperties":1,
+          "maxProperties":2,
+          "additionalProperties":{"type":"string"}
+        }"#,
+    );
+
+    for value in [json!({"one":"value"}), json!({"one":"value","two":"value"})] {
+        validate_wire_value(&schema, &value)
+            .expect("the object should satisfy its property bounds");
+    }
+    for value in [
+        json!({}),
+        json!({"one":"value","two":"value","three":"value"}),
+    ] {
+        validate_wire_value(&schema, &value)
+            .expect_err("property bounds must reject undersized and oversized objects");
+    }
+
+    remove_temporary_schema(&schema);
+}
+
+#[test]
+fn schema_profile_rejects_invalid_object_cardinality_bounds() {
+    for (label, source) in [
+        (
+            "negative-min-properties",
+            r#"{"type":"object","minProperties":-1}"#,
+        ),
+        (
+            "fractional-max-properties",
+            r#"{"type":"object","maxProperties":1.5}"#,
+        ),
+    ] {
+        let schema = temporary_schema(label, source);
+        validate_wire_value(&schema, &json!({}))
+            .expect_err("object property bounds must be non-negative safe integers");
+        remove_temporary_schema(&schema);
+    }
+}
+
+#[test]
 fn schema_profile_rejects_conditional_branches_without_if() {
     let schema = temporary_schema(
         "conditional-without-if",
