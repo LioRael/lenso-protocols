@@ -297,7 +297,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-contract-codegen"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "lenso-contract-authoring",
  "regex",
