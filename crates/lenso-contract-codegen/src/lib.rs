@@ -883,9 +883,11 @@ const SUPPORTED_SCHEMA_KEYWORDS: &[&str] = &[
     "items",
     "maxItems",
     "maxLength",
+    "maxProperties",
     "maximum",
     "minItems",
     "minLength",
+    "minProperties",
     "minimum",
     "oneOf",
     "pattern",
@@ -1078,7 +1080,14 @@ fn validate_schema_numeric_keywords(
     object: &Map<String, Value>,
     source_path: &Path,
 ) -> Result<(), CodegenError> {
-    for keyword in ["minLength", "maxLength", "minItems", "maxItems"] {
+    for keyword in [
+        "minLength",
+        "maxLength",
+        "minItems",
+        "maxItems",
+        "minProperties",
+        "maxProperties",
+    ] {
         if let Some(value) = object.get(keyword)
             && non_negative_safe_schema_integer(value).is_none()
         {
@@ -2225,6 +2234,29 @@ fn validate_wire_object(
     let Value::Object(properties) = value else {
         return invalid_wire_value(path, "expected an object", source_path);
     };
+    let property_count = u64::try_from(properties.len()).unwrap_or(u64::MAX);
+    if let Some(minimum) = schema
+        .get("minProperties")
+        .and_then(non_negative_safe_schema_integer)
+        && property_count < minimum
+    {
+        return invalid_wire_value(
+            path,
+            "object has fewer properties than minProperties",
+            source_path,
+        );
+    }
+    if let Some(maximum) = schema
+        .get("maxProperties")
+        .and_then(non_negative_safe_schema_integer)
+        && property_count > maximum
+    {
+        return invalid_wire_value(
+            path,
+            "object has more properties than maxProperties",
+            source_path,
+        );
+    }
     let required = required_fields(schema);
     for field in required {
         if !properties.contains_key(&field) {
