@@ -874,10 +874,12 @@ const SUPPORTED_SCHEMA_KEYWORDS: &[&str] = &[
     "additionalProperties",
     "anyOf",
     "const",
+    "else",
     "enum",
     "exclusiveMaximum",
     "exclusiveMinimum",
     "format",
+    "if",
     "items",
     "maxItems",
     "maxLength",
@@ -889,6 +891,7 @@ const SUPPORTED_SCHEMA_KEYWORDS: &[&str] = &[
     "pattern",
     "properties",
     "required",
+    "then",
     "type",
     "uniqueItems",
 ];
@@ -1123,6 +1126,22 @@ fn validate_schema_children(
         && !additional.is_boolean()
     {
         validate_schema_profile(additional, source_path)?;
+    }
+    if object.contains_key("then") || object.contains_key("else") {
+        let Some(condition) = object.get("if") else {
+            return Err(unsupported_schema(
+                source_path,
+                "Schema `then` and `else` require an `if` Schema",
+            ));
+        };
+        validate_schema_profile(condition, source_path)?;
+    } else if let Some(condition) = object.get("if") {
+        validate_schema_profile(condition, source_path)?;
+    }
+    for keyword in ["then", "else"] {
+        if let Some(branch) = object.get(keyword) {
+            validate_schema_profile(branch, source_path)?;
+        }
     }
 
     Ok(())
@@ -2027,6 +2046,16 @@ fn validate_wire_value_inner(
             source_path,
         );
     }
+    if let Some(condition) = schema.get("if") {
+        let branch = if validate_wire_value_inner(condition, value, path, source_path).is_ok() {
+            schema.get("then")
+        } else {
+            schema.get("else")
+        };
+        if let Some(branch) = branch {
+            validate_wire_value_inner(branch, value, path, source_path)?;
+        }
+    }
 
     match schema.get("type") {
         Some(Value::String(schema_type)) => {
@@ -2053,6 +2082,14 @@ fn validate_wire_value_inner(
             )
         }
         Some(_) => invalid_wire_value(path, "Schema type must be a string or array", source_path),
+        None if schema.as_object().is_some_and(|object| {
+            object.contains_key("properties")
+                || object.contains_key("required")
+                || object.contains_key("additionalProperties")
+        }) =>
+        {
+            validate_wire_type(schema, "object", value, path, source_path)
+        }
         None if schema
             .as_object()
             .is_some_and(|object| object.contains_key("const") || object.contains_key("enum")) =>

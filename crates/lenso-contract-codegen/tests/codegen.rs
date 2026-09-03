@@ -1001,6 +1001,56 @@ fn schema_profile_rejects_unknown_assertions_recursively() {
 }
 
 #[test]
+fn wire_conditionals_preserve_cross_field_constraints() {
+    let schema = temporary_schema(
+        "conditional",
+        r#"{
+          "type":"object",
+          "required":["outcome","failure"],
+          "properties":{
+            "outcome":{"type":"string","enum":["accepted","rejected"]},
+            "failure":{"type":["string","null"]}
+          },
+          "additionalProperties":false,
+          "if":{"properties":{"outcome":{"const":"accepted"}}},
+          "then":{"properties":{"failure":{"const":null}}},
+          "else":{"properties":{"failure":{"type":"string","minLength":1}}}
+        }"#,
+    );
+
+    for value in [
+        json!({"outcome":"accepted","failure":null}),
+        json!({"outcome":"rejected","failure":"unavailable"}),
+    ] {
+        validate_wire_value(&schema, &value)
+            .expect("the value should satisfy its selected conditional branch");
+    }
+    for value in [
+        json!({"outcome":"accepted","failure":"unexpected"}),
+        json!({"outcome":"rejected","failure":null}),
+    ] {
+        validate_wire_value(&schema, &value)
+            .expect_err("the selected conditional branch must remain enforced");
+    }
+
+    remove_temporary_schema(&schema);
+}
+
+#[test]
+fn schema_profile_rejects_conditional_branches_without_if() {
+    let schema = temporary_schema(
+        "conditional-without-if",
+        r#"{"type":"string","then":{"const":"accepted"}}"#,
+    );
+
+    let error = validate_wire_value(&schema, &json!("accepted"))
+        .expect_err("a conditional branch without its condition must fail closed");
+    assert!(error.to_string().contains("require an `if` Schema"));
+
+    remove_temporary_schema(&schema);
+}
+
+#[test]
 fn schema_profile_accepts_harmless_annotations() {
     let schema = temporary_schema(
         "annotations",
