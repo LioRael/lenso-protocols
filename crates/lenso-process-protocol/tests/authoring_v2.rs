@@ -1,6 +1,12 @@
-use lenso_process_protocol::{authoring::*, decode_strict};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use lenso_process_protocol::{
+    AuthoringHandshakeProofInput, authoring::*, authoring_callback_proof_message,
+    authoring_child_proof_message, authoring_handshake_proof_payload, authoring_host_proof_message,
+    decode_strict,
+};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 
 fn fixture() -> Value {
     decode_strict(include_bytes!(
@@ -61,6 +67,91 @@ fn shared_authoring_v2_values_validate() {
     field::<StoppedResult>(&values, "stopped")
         .validate_for(&stop)
         .unwrap();
+}
+
+#[test]
+fn authoring_v2_proof_bytes_bind_initialize_callback_and_session() {
+    let mut initialize: InitializeParams = field(&fixture(), "initialize");
+    initialize.identity.session = URL_SAFE_NO_PAD.encode([3_u8; 32]);
+    let host_nonce = URL_SAFE_NO_PAD.encode([1_u8; 32]);
+    let child_nonce = URL_SAFE_NO_PAD.encode([2_u8; 32]);
+    let payload = authoring_handshake_proof_payload(AuthoringHandshakeProofInput {
+        initialize: &initialize,
+        callback_origin: "http://127.0.0.1:31001/",
+        host_nonce: &host_nonce,
+    })
+    .unwrap();
+    let digest: [u8; 32] = Sha256::digest(&payload).into();
+    assert_eq!(
+        digest,
+        [
+            0x9f, 0x33, 0xc7, 0xec, 0xaa, 0x83, 0xba, 0x6d, 0x2e, 0x91, 0x74, 0xd8, 0xdd, 0xa1,
+            0x9f, 0x18, 0x1f, 0xe1, 0xb1, 0x0f, 0x68, 0x83, 0xb6, 0x98, 0x60, 0x62, 0x52, 0x26,
+            0x4b, 0xd9, 0x74, 0xd7,
+        ]
+    );
+
+    assert_eq!(
+        authoring_host_proof_message(&digest),
+        [b"lenso-authoring-host-v2\0".as_slice(), digest.as_slice()].concat()
+    );
+    assert_eq!(
+        authoring_child_proof_message(&digest, &child_nonce).unwrap(),
+        [
+            b"lenso-authoring-child-v2\0".as_slice(),
+            digest.as_slice(),
+            &[2_u8; 32],
+        ]
+        .concat()
+    );
+    let callback = authoring_callback_proof_message(
+        &initialize.identity.session,
+        "lenso.call",
+        &serde_json::json!({"route_id": "route-1", "correlation_id": "1"}),
+    )
+    .unwrap();
+    assert_eq!(
+        callback,
+        [
+            b"lenso-authoring-callback-v2\0".as_slice(),
+            &[3_u8; 32],
+            b"\0lenso.call\0{\"correlation_id\":\"1\",\"route_id\":\"route-1\"}",
+        ]
+        .concat()
+    );
+
+    assert!(
+        authoring_handshake_proof_payload(AuthoringHandshakeProofInput {
+            initialize: &initialize,
+            callback_origin: "http://example.com:31001/",
+            host_nonce: &host_nonce,
+        })
+        .is_err()
+    );
+    assert!(
+        authoring_handshake_proof_payload(AuthoringHandshakeProofInput {
+            initialize: &initialize,
+            callback_origin: "http://127.0.0.1:0/",
+            host_nonce: &host_nonce,
+        })
+        .is_err()
+    );
+    assert!(
+        authoring_handshake_proof_payload(AuthoringHandshakeProofInput {
+            initialize: &initialize,
+            callback_origin: "http://127.0.0.1:80/",
+            host_nonce: &host_nonce,
+        })
+        .is_ok()
+    );
+    assert!(
+        authoring_callback_proof_message(
+            &initialize.identity.session,
+            "lenso.unknown",
+            &Value::Null,
+        )
+        .is_err()
+    );
 }
 
 #[test]
