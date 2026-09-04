@@ -3672,6 +3672,8 @@ fn generate_rust(contract: &ContractIr) -> String {
     let mut operation_markers = Vec::new();
     let mut provider_methods = Vec::new();
     let mut provider_lowering_methods = Vec::new();
+    let mut object_provider_lowering_methods = Vec::new();
+    let mut trait_object_provider_lowering_methods = Vec::new();
     let mut provider_result_conversions = Vec::new();
     let mut endpoint_arms = Vec::new();
     let mut stream_endpoint_arms = Vec::new();
@@ -3780,6 +3782,12 @@ fn generate_rust(contract: &ContractIr) -> String {
             provider_lowering_methods.push(format!(
                 "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::NativeRequestFuture<$crate::{marker_name}> {{\n            let plugin = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$plugin>::{field}(&plugin, context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
             ));
+            object_provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::NativeRequestFuture<$crate::{marker_name}> {{\n            let object = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let plugin = object.get()?;\n                let result = <$plugin>::{field}(plugin.as_ref(), context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
+            ));
+            trait_object_provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::NativeRequestFuture<$crate::{marker_name}> {{\n            let object = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let plugin = object.get()?;\n                <$plugin as $crate::{capability_name}Provider>::{field}(plugin.as_ref(), context, request).await\n            }})\n        }}"
+            ));
             endpoint_arms.push(format!(
                 "            {operation_const}_OPERATION => {{\n                let Ok(request) = request.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let invocation = Rc::clone(&self.provider).{}(context, *request);\n                Box::pin(async move {{\n                    invocation.await.map(|result| {{\n                        result\n                            .map(|value| Box::new(value) as Box<dyn std::any::Any>)\n                            .map_err(|error| Box::new(error) as Box<dyn std::any::Any>)\n                    }})\n                }})\n            }}",
                 rust_field_name(&operation.name),
@@ -3819,6 +3827,12 @@ fn generate_rust(contract: &ContractIr) -> String {
             provider_lowering_methods.push(format!(
                 "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<Box<dyn {native_support_name}::NativeStreamSession>, $crate::{invocation_error_name}>> {{\n            let plugin = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$plugin>::{field}(&plugin, context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
             ));
+            object_provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<Box<dyn {native_support_name}::NativeStreamSession>, $crate::{invocation_error_name}>> {{\n            let object = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let plugin = object.get().map_err($crate::{invocation_error_name}::Runtime)?;\n                let result = <$plugin>::{field}(plugin.as_ref(), context, request).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
+            ));
+            trait_object_provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, request: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<Box<dyn {native_support_name}::NativeStreamSession>, $crate::{invocation_error_name}>> {{\n            let object = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let plugin = object.get().map_err($crate::{invocation_error_name}::Runtime)?;\n                <$plugin as $crate::{capability_name}Provider>::{field}(plugin.as_ref(), context, request).await\n            }})\n        }}"
+            ));
             stream_endpoint_arms.push(format!(
                 "            {operation_const}_OPERATION => {{\n                let Ok(request) = request.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                let provider = Rc::clone(&self.provider);\n                Box::pin(async move {{\n                    match provider.{}(context, *request).await {{\n                        Ok(value) => Ok(Ok(value as Box<dyn NativeStreamSession>)),\n                        Err({invocation_error_name}::Domain(error)) => Ok(Err(Box::new(error) as Box<dyn std::any::Any>)),\n                        Err({invocation_error_name}::Runtime(error)) => Err(error),\n                    }}\n                }})\n            }}",
                 rust_field_name(&operation.name),
@@ -3850,6 +3864,12 @@ fn generate_rust(contract: &ContractIr) -> String {
             ));
             provider_lowering_methods.push(format!(
                 "        fn {field}(&self, context: {native_support_name}::InvocationContext, event: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<(), {native_support_name}::RuntimeFailure>> {{\n            let plugin = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let result = <$plugin>::{field}(&plugin, context, event).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
+            ));
+            object_provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, event: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<(), {native_support_name}::RuntimeFailure>> {{\n            let object = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let plugin = object.get()?;\n                let result = <$plugin>::{field}(plugin.as_ref(), context, event).await;\n                $crate::{conversion}::__lenso_into_result(result)\n            }})\n        }}"
+            ));
+            trait_object_provider_lowering_methods.push(format!(
+                "        fn {field}(&self, context: {native_support_name}::InvocationContext, event: $crate::{request_type}) -> {native_support_name}::LocalBoxFuture<'static, Result<(), {native_support_name}::RuntimeFailure>> {{\n            let object = self.clone();\n            ::std::boxed::Box::pin(async move {{\n                let plugin = object.get()?;\n                <$plugin as $crate::{capability_name}Provider>::{field}(plugin.as_ref(), context, event).await\n            }})\n        }}"
             ));
             event_endpoint_arms.push(format!(
                 "            {operation_const}_OPERATION => {{\n                let Ok(event) = event.downcast::<{request_type}>() else {{\n                    return Box::pin(futures::future::ready(Err(RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }})));\n                }};\n                Rc::clone(&self.provider).{}(context, *event)\n            }}",
@@ -4016,12 +4036,26 @@ fn generate_rust(contract: &ContractIr) -> String {
         "descriptor_version": contract.version,
         "cardinality": "many"
     }));
+    let named_requirement_suffix = |cardinality: &str| {
+        format!(
+            ",\"capability_id\":{},\"descriptor_version\":{},\"cardinality\":{}}}",
+            quote_string(&contract.capability_id),
+            quote_string(&contract.version),
+            quote_string(cardinality),
+        )
+    };
+    let required_named_suffix = named_requirement_suffix("one");
+    let required_optional_named_suffix = named_requirement_suffix("optional");
+    let required_many_named_suffix = named_requirement_suffix("many");
     writeln!(
         output,
-        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_provided_{capability_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_{client_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_many_{client_macro_name} {{ () => {{ {} }}; }}\n",
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_provided_{capability_macro_name} {{ () => {{ {} }}; }}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_{client_macro_name} {{\n    () => {{ {} }};\n    ($requirement_id:literal) => {{ concat!(\"{{\\\"requirement_id\\\":\", stringify!($requirement_id), {}) }};\n}}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_optional_{client_macro_name} {{\n    ($requirement_id:literal) => {{ concat!(\"{{\\\"requirement_id\\\":\", stringify!($requirement_id), {}) }};\n}}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_required_many_{client_macro_name} {{\n    () => {{ {} }};\n    ($requirement_id:literal) => {{ concat!(\"{{\\\"requirement_id\\\":\", stringify!($requirement_id), {}) }};\n}}\n",
         quote_string(&provided_fragment),
         quote_string(&required_fragment),
+        quote_string(&required_named_suffix),
+        quote_string(&required_optional_named_suffix),
         quote_string(&required_many_fragment),
+        quote_string(&required_many_named_suffix),
     )
     .expect("writing to a String cannot fail");
     for operation in &contract.operations {
@@ -4067,8 +4101,10 @@ fn generate_rust(contract: &ContractIr) -> String {
     .expect("writing to a String cannot fail");
     writeln!(
         output,
-        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_lower_{capability_macro_name} {{\n    ($plugin:ty, $support:path) => {{\n        use $support as {native_support_name};\n        impl $crate::{capability_name}Provider for $plugin {{\n{}\n        }}\n    }};\n}}\n",
-        provider_lowering_methods.join("\n")
+        "#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_lower_{capability_macro_name} {{\n    ($plugin:ty, $support:path) => {{\n        use $support as {native_support_name};\n        impl $crate::{capability_name}Provider for $plugin {{\n{}\n        }}\n    }};\n}}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_lower_object_{capability_macro_name} {{\n    ($object:ty, $plugin:ty, $support:path) => {{\n        use $support as {native_support_name};\n        impl $crate::{capability_name}Provider for $object {{\n{}\n        }}\n    }};\n}}\n\n#[doc(hidden)]\n#[macro_export]\nmacro_rules! __lenso_native_lower_trait_object_{capability_macro_name} {{\n    ($object:ty, $plugin:ty, $support:path) => {{\n        use $support as {native_support_name};\n        impl $crate::{capability_name}Provider for $object {{\n{}\n        }}\n    }};\n}}\n",
+        provider_lowering_methods.join("\n"),
+        object_provider_lowering_methods.join("\n"),
+        trait_object_provider_lowering_methods.join("\n")
     )
     .expect("writing to a String cannot fail");
     if has_request_operations {
