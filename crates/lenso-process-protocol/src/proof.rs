@@ -2,10 +2,16 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
-use super::{HandshakeIdentity, HandshakeParams, ProtocolError, decode_base64url_32};
+use super::{
+    HandshakeIdentity, HandshakeParams, ProtocolError, authoring::InitializeParams,
+    decode_base64url_32,
+};
 
 const HOST_PROOF_DOMAIN: &[u8] = b"lenso-process-host-v1";
 const CHILD_PROOF_DOMAIN: &[u8] = b"lenso-process-child-v1";
+const AUTHORING_HOST_PROOF_DOMAIN: &[u8] = b"lenso-authoring-host-v2";
+const AUTHORING_CHILD_PROOF_DOMAIN: &[u8] = b"lenso-authoring-child-v2";
+const AUTHORING_CALLBACK_PROOF_DOMAIN: &[u8] = b"lenso-authoring-callback-v2";
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// Returns RFC 8785-compatible canonical bytes for the restricted proof profile.
@@ -51,6 +57,112 @@ pub fn child_proof_message(
         handshake_digest,
         Some(&session),
     ))
+}
+
+/// Values bound by an Authoring V2 initialization handshake.
+#[derive(Clone, Copy, Debug)]
+pub struct AuthoringHandshakeProofInput<'a> {
+    /// Exact initialization admitted by the child.
+    pub initialize: &'a InitializeParams,
+    /// Exact loopback HTTP origin exposed by the Host callback listener.
+    pub callback_origin: &'a str,
+    /// Canonical 32-byte base64url Host nonce.
+    pub host_nonce: &'a str,
+}
+
+/// Returns the canonical bytes hashed before authenticating Authoring V2 initialization.
+pub fn authoring_handshake_proof_payload(
+    input: AuthoringHandshakeProofInput<'_>,
+) -> Result<Vec<u8>, ProtocolError> {
+    #[derive(Serialize)]
+    struct ProofPayload<'a> {
+        initialize: &'a InitializeParams,
+        callback_origin: &'a str,
+        host_nonce: &'a str,
+    }
+
+    input.initialize.validate()?;
+    validate_loopback_http_origin(input.callback_origin)?;
+    decode_base64url_32("host_nonce", input.host_nonce)?;
+    let value = serde_json::to_value(ProofPayload {
+        initialize: input.initialize,
+        callback_origin: input.callback_origin,
+        host_nonce: input.host_nonce,
+    })
+    .map_err(|error| ProtocolError::new(format!("cannot encode authoring proof: {error}")))?;
+    canonicalize_proof_value(&value)
+}
+
+/// Returns the exact bytes authenticated by the Authoring V2 Host proof.
+#[must_use]
+pub fn authoring_host_proof_message(handshake_digest: &[u8; 32]) -> Vec<u8> {
+    proof_message(AUTHORING_HOST_PROOF_DOMAIN, handshake_digest, None)
+}
+
+/// Returns the exact bytes authenticated by the Authoring V2 child proof.
+pub fn authoring_child_proof_message(
+    handshake_digest: &[u8; 32],
+    child_nonce: &str,
+) -> Result<Vec<u8>, ProtocolError> {
+    let child_nonce = decode_base64url_32("child_nonce", child_nonce)?;
+    Ok(proof_message(
+        AUTHORING_CHILD_PROOF_DOMAIN,
+        handshake_digest,
+        Some(&child_nonce),
+    ))
+}
+
+/// Returns the exact bytes authenticating one child-to-Host callback request.
+pub fn authoring_callback_proof_message(
+    session: &str,
+    method: &str,
+    params: &Value,
+) -> Result<Vec<u8>, ProtocolError> {
+    if method != "lenso.call" && method != "lenso.settled" {
+        return Err(ProtocolError::new("unsupported Authoring callback method"));
+    }
+    let session = decode_base64url_32("session", session)?;
+    let canonical_params = canonicalize_proof_value(params)?;
+    let mut message = Vec::with_capacity(
+        AUTHORING_CALLBACK_PROOF_DOMAIN.len()
+            + 1
+            + session.len()
+            + 1
+            + method.len()
+            + 1
+            + canonical_params.len(),
+    );
+    message.extend_from_slice(AUTHORING_CALLBACK_PROOF_DOMAIN);
+    message.push(0);
+    message.extend_from_slice(&session);
+    message.push(0);
+    message.extend_from_slice(method.as_bytes());
+    message.push(0);
+    message.extend_from_slice(&canonical_params);
+    Ok(message)
+}
+
+fn validate_loopback_http_origin(value: &str) -> Result<(), ProtocolError> {
+    let port = value
+        .strip_prefix("http://127.0.0.1:")
+        .or_else(|| value.strip_prefix("http://[::1]:"))
+        .and_then(|value| value.strip_suffix('/'))
+        .ok_or_else(|| {
+            ProtocolError::new("callback_origin must be an exact loopback HTTP origin")
+        })?;
+    if !port.as_bytes().first().is_some_and(u8::is_ascii_digit)
+        || port.starts_with('0')
+        || port
+            .parse::<u16>()
+            .ok()
+            .as_ref()
+            .is_none_or(|port| *port == 0)
+    {
+        return Err(ProtocolError::new(
+            "callback_origin must be an exact loopback HTTP origin",
+        ));
+    }
+    Ok(())
 }
 
 fn proof_message(domain: &[u8], digest: &[u8; 32], suffix: Option<&[u8; 32]>) -> Vec<u8> {

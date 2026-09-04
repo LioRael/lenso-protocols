@@ -546,7 +546,7 @@ export function validateAuthoringMessage(
 
 export function parseAuthoringFrame(
   wire: string,
-  maxBytes = DEFAULT_MAX_FRAME_BYTES,
+  maxBytes: number = DEFAULT_MAX_FRAME_BYTES,
 ): unknown {
   if (new TextEncoder().encode(wire).byteLength > maxBytes)
     fail("Authoring frame exceeds max_frame_bytes");

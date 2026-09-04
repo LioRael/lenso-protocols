@@ -1,8 +1,13 @@
 import { expect, test } from "bun:test";
+import authoringFixture from "../../../fixtures/process-protocol/authoring-v2-conformance.json";
 import {
   PROCESS_PROFILE,
   PROVIDE_REQUEST_PROFILE,
   VALUE_PROFILE,
+  authoringCallbackProofMessage,
+  authoringChildProofMessage,
+  authoringHandshakeProofPayload,
+  authoringHostProofMessage,
   canonicalizeProofValue,
   decodeBase64Url32,
   encodeBase64Url,
@@ -12,6 +17,7 @@ import {
   validateRequestResult,
   validateReadinessRecord,
   type HandshakeIdentity,
+  type InitializeParams,
 } from "@lenso/process-protocol";
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`;
@@ -121,4 +127,98 @@ test("base64url encoding is canonical and byte exact", () => {
   expect(encoded).toHaveLength(43);
   expect(decodeBase64Url32(encoded)).toEqual(bytes);
   expect(() => decodeBase64Url32(`${encoded}=`)).toThrow("canonical base64url");
+});
+
+test("Authoring V2 proofs bind initialization, loopback callback, and session", () => {
+  const hostNonce = encodeBase64Url(new Uint8Array(32).fill(1));
+  const childNonce = encodeBase64Url(new Uint8Array(32).fill(2));
+  const session = encodeBase64Url(new Uint8Array(32).fill(3));
+  const initialize: InitializeParams = {
+    api_version: 2,
+    identity: {
+      session,
+      plugin_instance: "plugin",
+      plugin_generation: "1",
+      artifact_digest: digest("a"),
+      contract_digest: digest("b"),
+      runtime_profile: "lenso.bun-authoring@2",
+      value_profile: VALUE_PROFILE,
+    },
+    config: { mode: "test" },
+    required_declarations: [],
+    routes: [],
+    provided_endpoints: [],
+    limits: {
+      max_frame_bytes: 65_536,
+      max_active_invocations: 2,
+      max_active_outbound_calls: 2,
+      max_queued_calls: 2,
+      max_unfinished_executions: 2,
+      max_retired_ids: 16,
+    },
+  };
+  const payload = authoringHandshakeProofPayload({
+    initialize,
+    callback_origin: "http://127.0.0.1:31001/",
+    host_nonce: hostNonce,
+  });
+  const changed = authoringHandshakeProofPayload({
+    initialize: { ...initialize, config: { mode: "changed" } },
+    callback_origin: "http://127.0.0.1:31001/",
+    host_nonce: hostNonce,
+  });
+  expect(payload).not.toEqual(changed);
+  expect(() =>
+    authoringHandshakeProofPayload({
+      initialize,
+      callback_origin: "https://example.com/",
+      host_nonce: hostNonce,
+    }),
+  ).toThrow("loopback");
+  expect(() =>
+    authoringHandshakeProofPayload({
+      initialize,
+      callback_origin: "http://127.0.0.1:0/",
+      host_nonce: hostNonce,
+    }),
+  ).toThrow("loopback");
+  expect(() =>
+    authoringHandshakeProofPayload({
+      initialize,
+      callback_origin: "http://127.0.0.1:80/",
+      host_nonce: hostNonce,
+    }),
+  ).not.toThrow();
+
+  const handshakeDigest = new Bun.CryptoHasher("sha256").update(payload).digest();
+  expect(authoringHostProofMessage(handshakeDigest)).not.toEqual(
+    authoringChildProofMessage(handshakeDigest, childNonce),
+  );
+  expect(
+    authoringCallbackProofMessage(session, "lenso.call", {
+      correlation_id: "1",
+      route_id: "route-1",
+    }),
+  ).not.toEqual(
+    authoringCallbackProofMessage(session, "lenso.call", {
+      correlation_id: "1",
+      route_id: "route-2",
+    }),
+  );
+
+  const fixtureInitialize = {
+    ...structuredClone(authoringFixture.initialize),
+    identity: {
+      ...structuredClone(authoringFixture.initialize.identity),
+      session,
+    },
+  } as InitializeParams;
+  const fixturePayload = authoringHandshakeProofPayload({
+    initialize: fixtureInitialize,
+    callback_origin: "http://127.0.0.1:31001/",
+    host_nonce: hostNonce,
+  });
+  expect(
+    new Bun.CryptoHasher("sha256").update(fixturePayload).digest("hex"),
+  ).toBe("9f33c7ecaa83ba6d2e9174d8dda19f181fe1b10f6883b698606252264bd974d7");
 });

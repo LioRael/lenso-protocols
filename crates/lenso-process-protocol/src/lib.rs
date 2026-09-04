@@ -16,7 +16,9 @@ mod strict_json;
 pub mod authoring;
 
 pub use proof::{
-    canonicalize_proof_value, child_proof_message, handshake_params_digest, host_proof_message,
+    AuthoringHandshakeProofInput, authoring_callback_proof_message, authoring_child_proof_message,
+    authoring_handshake_proof_payload, authoring_host_proof_message, canonicalize_proof_value,
+    child_proof_message, handshake_params_digest, host_proof_message,
 };
 pub use strict_json::{MAX_STRICT_JSON_NESTING, decode_strict, encode_compact};
 

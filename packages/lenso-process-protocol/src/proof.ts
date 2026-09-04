@@ -1,8 +1,12 @@
 import type { HandshakeParams } from "./types.js";
+import { validateInitialize, type InitializeParams } from "./authoring.js";
 
 const encoder = new TextEncoder();
 const HOST_DOMAIN = encoder.encode("lenso-process-host-v1");
 const CHILD_DOMAIN = encoder.encode("lenso-process-child-v1");
+const AUTHORING_HOST_DOMAIN = encoder.encode("lenso-authoring-host-v2");
+const AUTHORING_CHILD_DOMAIN = encoder.encode("lenso-authoring-child-v2");
+const AUTHORING_CALLBACK_DOMAIN = encoder.encode("lenso-authoring-callback-v2");
 const BASE64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /** RFC 8785-compatible canonical JSON for the restricted proof value profile. */
@@ -35,6 +39,62 @@ export function childProofMessage(
     Uint8Array.of(0),
     handshakeDigest,
     decodeBase64Url32(session, "session"),
+  );
+}
+
+export interface AuthoringHandshakeProofInput {
+  readonly initialize: InitializeParams;
+  readonly callback_origin: string;
+  readonly host_nonce: string;
+}
+
+/** Canonical bytes hashed before authenticating one Authoring V2 initialization. */
+export function authoringHandshakeProofPayload(
+  input: AuthoringHandshakeProofInput,
+): Uint8Array {
+  validateInitialize(input.initialize);
+  if (!isLoopbackHttpOrigin(input.callback_origin)) {
+    throw new Error("callback_origin must be an exact loopback HTTP origin");
+  }
+  decodeBase64Url32(input.host_nonce, "host_nonce");
+  return canonicalizeProofValue(input);
+}
+
+/** Exact bytes authenticated by the Authoring V2 Host proof. */
+export function authoringHostProofMessage(handshakeDigest: Uint8Array): Uint8Array {
+  exactLength(handshakeDigest, 32, "handshake digest");
+  return concatenate(AUTHORING_HOST_DOMAIN, Uint8Array.of(0), handshakeDigest);
+}
+
+/** Exact bytes authenticated by the Authoring V2 child proof. */
+export function authoringChildProofMessage(
+  handshakeDigest: Uint8Array,
+  childNonce: string,
+): Uint8Array {
+  exactLength(handshakeDigest, 32, "handshake digest");
+  return concatenate(
+    AUTHORING_CHILD_DOMAIN,
+    Uint8Array.of(0),
+    handshakeDigest,
+    decodeBase64Url32(childNonce, "child_nonce"),
+  );
+}
+
+/** Exact bytes authenticating one child-to-Host callback request. */
+export function authoringCallbackProofMessage(
+  session: string,
+  method: "lenso.call" | "lenso.settled",
+  params: unknown,
+): Uint8Array {
+  const sessionBytes = decodeBase64Url32(session, "session");
+  return concatenate(
+    AUTHORING_CALLBACK_DOMAIN,
+    Uint8Array.of(0),
+    sessionBytes,
+    Uint8Array.of(0),
+    encoder.encode(method),
+    Uint8Array.of(0),
+    canonicalizeProofValue(params),
   );
 }
 
@@ -119,4 +179,9 @@ function concatenate(...values: readonly Uint8Array[]): Uint8Array {
 
 function exactLength(value: Uint8Array, expected: number, name: string): void {
   if (value.length !== expected) throw new Error(`${name} must contain ${expected} bytes`);
+}
+
+function isLoopbackHttpOrigin(value: string): boolean {
+  const match = /^http:\/\/(?:127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})\/$/.exec(value);
+  return match !== null && Number(match[1]) <= 65_535;
 }
