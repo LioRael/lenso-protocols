@@ -31,6 +31,11 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
     assert!(
         projection
             .source
+            .contains("fn descriptor_digest(&self) -> &'static str { DESCRIPTOR_DIGEST }")
+    );
+    assert!(
+        projection
+            .source
             .contains("request.downcast_ref::<EchoRequest>()")
     );
     assert!(
