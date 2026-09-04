@@ -6,7 +6,7 @@ license.workspace = true
 publish = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Runtime-neutral wire primitives and serde support for generated Lenso contracts."
+description = "Runtime-neutral Rust wire primitives and serde support for generated Lenso contracts."
 readme = "README.md"
 
 [dependencies]
