@@ -4598,6 +4598,7 @@ fn generate_typescript(contract: &ContractIr) -> String {
     let mut errors = Vec::new();
     let mut codecs = Vec::new();
     let mut request_dispatch_arms = Vec::new();
+    let mut dependency_methods = Vec::new();
     let operation_names = contract
         .operations
         .iter()
@@ -4714,6 +4715,10 @@ fn generate_typescript(contract: &ContractIr) -> String {
                 "      case {}: {{\n        let request: {request_type};\n        try {{\n          request = decode{operation_name}Request(lensoContractRuntime.encodePortableJson(payload, \"request\"));\n        }} catch (error) {{\n          return {{ kind: \"runtime\", failure: {{ kind: \"protocol_violation\", detail: providerErrorMessage(error) }} }};\n        }}\n        try {{\n          const result = await provider.{provider_method}(context, request);\n          if (result.ok) {{\n            return {{ kind: \"success\", value: JSON.parse(encode{operation_name}Response(result.value)) as unknown }};\n          }}\n          if (result.error.kind === \"domain\") {{\n            return {{ kind: \"domain\", value: JSON.parse(encode{operation_name}Error(result.error.error)) as unknown }};\n          }}\n          return {{ kind: \"runtime\", failure: result.error.error }};\n        }} catch (error) {{\n          return {{ kind: \"runtime\", failure: {{ kind: \"plugin_failure\", detail: providerErrorMessage(error) }} }};\n        }}\n      }}",
                 quote_string(&operation.name),
             ));
+            dependency_methods.push(format!(
+                "      async {provider_method}(request, context) {{\n        let payload: unknown;\n        try {{\n          payload = JSON.parse(encode{operation_name}Request(request)) as unknown;\n        }} catch (error) {{\n          return {{ ok: false, error: {{ kind: \"runtime\", error: {{ kind: \"protocol_violation\", detail: dependencyErrorMessage(error) }} }} }};\n        }}\n        const call = context ?? {{ requestId: \"0\" as Uint64, cancelled: false }};\n        try {{\n          const outcome = await invoke({}, call, payload);\n          if (outcome.kind === \"success\") {{\n            return {{ ok: true, value: decode{operation_name}Response(JSON.stringify(outcome.value)) }};\n          }}\n          if (outcome.kind === \"domain\") {{\n            return {{ ok: false, error: {{ kind: \"domain\", error: decode{operation_name}Error(JSON.stringify(outcome.value)) }} }};\n          }}\n          return {{ ok: false, error: {{ kind: \"runtime\", error: outcome.failure }} }};\n        }} catch (error) {{\n          return {{ ok: false, error: {{ kind: \"runtime\", error: {{ kind: \"plugin_failure\", detail: dependencyErrorMessage(error) }} }} }};\n        }}\n      }},",
+                quote_string(&operation.name),
+            ));
         }
     }
     let mut output = String::new();
@@ -4780,6 +4785,18 @@ fn generate_typescript(contract: &ContractIr) -> String {
         request_dispatch_arms.join("\n")
     )
     .expect("writing to a String cannot fail");
+    if contract
+        .operations
+        .iter()
+        .all(|operation| operation.interaction == "request")
+    {
+        write!(
+            output,
+            "\nexport type DependencyInvoker = (\n  operation: string,\n  context: InvocationContext,\n  payload: unknown,\n) => Promise<ProviderDispatchOutcome>;\n\nexport interface CapabilityDependencyBinding<Client> {{\n  readonly descriptor: CapabilityProviderDescriptor;\n  createClient(invoke: DependencyInvoker): Client;\n}}\n\nfunction dependencyErrorMessage(error: unknown): string {{\n  return error instanceof Error ? error.message : String(error);\n}}\n\nexport function bind{capability_name}Dependency(): CapabilityDependencyBinding<{capability_name}Client> {{\n  return {{\n    descriptor: {{\n      capability_id: CAPABILITY_ID,\n      descriptor_version: DESCRIPTOR_VERSION,\n      operations: [{operation_names}],\n      stream_operations: [],\n      event_operations: [],\n    }},\n    createClient(invoke) {{\n      return {{\n{}\n      }};\n    }},\n  }};\n}}\n\nexport const bindDependency = bind{capability_name}Dependency;\n",
+            dependency_methods.join("\n"),
+        )
+        .expect("writing to a String cannot fail");
+    }
     output.push_str(
         "\nexport const portableValueProfile = lensoContractRuntime.portableValueProfile;\n",
     );

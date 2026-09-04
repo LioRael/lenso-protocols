@@ -1,4 +1,5 @@
 import {
+  bindDependency,
   bindProvider,
   decodeCorpusRoundTripRequest,
   decodeCorpusRoundTripResponse,
@@ -103,6 +104,43 @@ test("generated TypeScript profile round-trips the shared corpus", () => {
       '{"code":"future","payload":9007199254740992.5}',
     ),
   ).toThrow("unsafe number");
+});
+
+test("generated dependency binding maps Host outcomes into the typed client", async () => {
+  const calls: Array<{ operation: string; payload: unknown }> = [];
+  const client = bindDependency().createClient(async (operation, _context, payload) => {
+    calls.push({ operation, payload });
+    const request = payload as { name: string; optional_note?: string | null };
+    if (request.name.length === 0) return { kind: "domain", value: "rejected" };
+    return {
+      kind: "success",
+      value: request.optional_note === undefined
+        ? { accepted: true }
+        : { accepted: true, echo: request.optional_note },
+    };
+  });
+  const request = {
+    duration: "PT1.5S",
+    name: "Ada",
+    payload: "AQI=",
+    signed: "-1",
+    timestamp: "2026-08-21T12:34:56Z",
+    unsigned: "1",
+    values: [1],
+  } as unknown as RoundTripRequest;
+
+  expect(await client.round_trip(request)).toEqual({
+    ok: true,
+    value: { accepted: true },
+  });
+  expect(await client.round_trip({ ...request, name: "" })).toEqual({
+    ok: false,
+    error: { kind: "domain", error: "rejected" },
+  });
+  expect(calls.map(({ operation }) => operation)).toEqual([
+    "round_trip",
+    "round_trip",
+  ]);
 });
 
 test("generated provider binding dispatches typed request outcomes", async () => {

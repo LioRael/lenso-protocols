@@ -649,6 +649,21 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .typescript
+            .contains("export function bindProfileDependency()")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("export const bindDependency = bindProfileDependency;")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("const outcome = await invoke(\"round_trip\", call, payload);")
+    );
+    assert!(
+        artifacts
+            .typescript
             .contains("async invokeRequest(operation, context, payload)")
     );
     assert!(
