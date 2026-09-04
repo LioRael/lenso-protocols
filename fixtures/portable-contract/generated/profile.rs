@@ -3,13 +3,16 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, PluginDependencies, RequestCapability, RuntimeFailure};
 
-use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
+use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany, CapabilityReference};
 pub const CAPABILITY_ID: &str = "example.profile@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
+pub const DESCRIPTOR_DIGEST: &str = "sha256:c98903ce7d5b1e28269bfbf78adc3a8570e4f3ba78a18b41fbf9a55d6a85a8bf";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = false;
 pub const PROFILE_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const PROFILE_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+pub const PROFILE_DESCRIPTOR_DIGEST: &str = DESCRIPTOR_DIGEST;
+pub const PROFILE_CONTRACT: CapabilityReference<ProfileClient> = CapabilityReference::new(CAPABILITY_ID, DESCRIPTOR_VERSION, DESCRIPTOR_DIGEST);
 
 #[doc(hidden)]
 #[macro_export]
@@ -530,6 +533,13 @@ impl ProfileClient {
         <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
+    pub fn from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Self, RuntimeFailure> {
+        <Self as CapabilityClient>::from_requirement(dependencies, requirement_id)
+    }
+
     pub async fn corpus_round_trip(&self, request: CorpusRoundTripRequest) -> Result<CorpusRoundTripResponse, ProfileCorpusRoundTripInvocationError> {
         self.corpus_round_trip.invoke(CORPUS_ROUND_TRIP_OPERATION, request).await
             .map_err(ProfileCorpusRoundTripInvocationError::Runtime)?
@@ -569,6 +579,14 @@ impl CapabilityClient for ProfileClient {
         })
     }
 
+    fn from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Self, RuntimeFailure> {
+        let dependencies = dependencies.requirement(requirement_id)?;
+        Self::from_dependencies(&dependencies)
+    }
+
     fn already_connected() -> RuntimeFailure {
         RuntimeFailure::PluginFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
@@ -594,6 +612,14 @@ impl CapabilityClientMany for ProfileClient {
                 ))
             })
             .collect()
+    }
+
+    fn many_from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        let dependencies = dependencies.requirement(requirement_id)?;
+        Self::many_from_dependencies(&dependencies)
     }
 }
 

@@ -1,7 +1,9 @@
 # @lenso/process-protocol
 
 Runtime-neutral TypeScript types, strict JSON decoding, proof framing, and
-conformance helpers for `lenso-process-jsonrpc-http-v1`.
+conformance helpers for `lenso-process-jsonrpc-http-v1`. The package also
+exports transport-neutral Authoring V2 values and validators; Process and Bun
+adapters supply their own envelopes.
 
 Execution Adapters and child SDKs use this package at their wire boundary. It
 does not spawn processes, open HTTP listeners, generate random secrets, perform

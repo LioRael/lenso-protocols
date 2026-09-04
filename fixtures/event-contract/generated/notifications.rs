@@ -3,13 +3,16 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{EventCapability, EventPublishResult, InvocationContext, NativeEventEndpoint, NativeEventHandle, PluginDependencies, RuntimeFailure};
 
-use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
+use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany, CapabilityReference};
 pub const CAPABILITY_ID: &str = "example.notifications@1";
 pub const DESCRIPTOR_VERSION: &str = "1.0.0";
+pub const DESCRIPTOR_DIGEST: &str = "sha256:b486651eeddeefe255d4fa59655a39bff665d7090a1d60e86512e31c0c83041f";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = false;
 pub const NOTIFICATIONS_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const NOTIFICATIONS_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+pub const NOTIFICATIONS_DESCRIPTOR_DIGEST: &str = DESCRIPTOR_DIGEST;
+pub const NOTIFICATIONS_CONTRACT: CapabilityReference<NotificationsClient> = CapabilityReference::new(CAPABILITY_ID, DESCRIPTOR_VERSION, DESCRIPTOR_DIGEST);
 
 #[doc(hidden)]
 #[macro_export]
@@ -236,6 +239,13 @@ impl NotificationsClient {
         <Self as CapabilityClient>::from_dependencies(dependencies)
     }
 
+    pub fn from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Self, RuntimeFailure> {
+        <Self as CapabilityClient>::from_requirement(dependencies, requirement_id)
+    }
+
     pub async fn notify(&self, event: NotifyRequest) -> Vec<EventPublishResult> {
         self.notify.publish(NOTIFY_OPERATION, event).await
     }
@@ -256,6 +266,14 @@ impl CapabilityClient for NotificationsClient {
         Ok(Self {
             notify: dependencies.many_event::<Notifications>()?,
         })
+    }
+
+    fn from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Self, RuntimeFailure> {
+        let dependencies = dependencies.requirement(requirement_id)?;
+        Self::from_dependencies(&dependencies)
     }
 
     fn already_connected() -> RuntimeFailure {
@@ -282,5 +300,13 @@ impl CapabilityClientMany for NotificationsClient {
                 ))
             })
             .collect()
+    }
+
+    fn many_from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        let dependencies = dependencies.requirement(requirement_id)?;
+        Self::many_from_dependencies(&dependencies)
     }
 }

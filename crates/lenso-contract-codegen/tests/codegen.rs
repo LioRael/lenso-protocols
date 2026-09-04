@@ -413,6 +413,8 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
 
     assert_eq!(artifacts.metadata.capability_id, "example.profile@1");
     assert_eq!(artifacts.metadata.descriptor_version, "1.0.0");
+    assert!(artifacts.metadata.descriptor_digest.starts_with("sha256:"));
+    assert_eq!(artifacts.metadata.descriptor_digest.len(), 71);
     assert!(artifacts.metadata.portable);
     assert!(
         artifacts
@@ -489,9 +491,20 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
+            .contains("PROFILE_CONTRACT: CapabilityReference<ProfileClient>")
+    );
+    assert!(
+        artifacts
+            .rust
             .contains("impl CapabilityClientMany for ProfileClient")
     );
     assert!(artifacts.rust.contains("binding.provider_instance()"));
+    assert!(
+        artifacts
+            .rust
+            .contains("dependencies.requirement(requirement_id)?")
+    );
+    assert!(artifacts.rust.contains("fn many_from_requirement("));
     assert!(
         artifacts
             .rust
@@ -502,6 +515,15 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
             .typescript
             .contains("export const CAPABILITY_ID = \"example.profile@1\";")
     );
+    assert!(
+        artifacts
+            .typescript
+            .contains("PROFILE_CONTRACT: CapabilityContractReference<ProfileClient>")
+    );
+    assert!(artifacts.typescript.contains(&format!(
+        "export const DESCRIPTOR_DIGEST = \"{}\";",
+        artifacts.metadata.descriptor_digest
+    )));
     assert!(
         artifacts
             .typescript

@@ -46,4 +46,6 @@ jobs:
       - name: Test TypeScript runtime and conformance
         run: bun run test
       - name: Check npm package contents
-        run: npm pack --dry-run ./packages/lenso-contract-runtime
+        run: |
+          npm pack --dry-run ./packages/lenso-contract-runtime
+          npm pack --dry-run ./packages/lenso-process-protocol
