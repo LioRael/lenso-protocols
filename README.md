@@ -17,6 +17,10 @@ retain their relevant Git history.
 - `@lenso/contract-runtime`: provides the matching dependency-free TypeScript
   wire types, portable JSON behavior, and forward-compatible Domain Error
   decoding as an npm package.
+- `lenso-plugin-authoring`: provides runtime-neutral typed Ports and generated
+  contract references, including source-named requirement connection.
+- `lenso-process-protocol` and `@lenso/process-protocol`: retain the exact
+  HTTP V1 protocol and expose separate transport-neutral Authoring V2 values.
 - `fixtures/portable-contract`: cross-language value-profile conformance data.
 
 Generated bindings retain contract-specific values, Provider traits, Clients,
@@ -35,10 +39,11 @@ Generated Rust Clients also implement
 lifecycle-bound `Port<C>` fields: Plugin glue can connect a whole generated
 Client from Plan-owned dependencies without knowing its request, stream, or
 Event handle layout. Rust Capability crates generated with this version must
-depend on `lenso-plugin-authoring`.
+depend on `lenso-plugin-authoring`. New generated clients can narrow that
+view by exact `requirement_id`; unscoped lookup remains the compatibility path.
 
 TypeScript bindings also expose a typed Provider interface and a generated
-request dispatcher. Runtime packages consume the runtime-neutral
+contract reference. Runtime packages consume the runtime-neutral
 `CapabilityProviderBinding`; Plugin authors implement only their generated
 `Provider` alias and register it with `bindProvider`. Decoding, encoding,
 Domain Error preservation, unknown Operations, and thrown Plugin failures stay

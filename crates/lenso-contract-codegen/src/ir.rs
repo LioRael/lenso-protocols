@@ -4,6 +4,7 @@
 pub(super) struct ContractIr {
     pub(super) capability_id: String,
     pub(super) version: String,
+    pub(super) descriptor_digest: String,
     pub(super) portable: bool,
     pub(super) cross_lane_transfer: bool,
     pub(super) operations: Vec<OperationIr>,

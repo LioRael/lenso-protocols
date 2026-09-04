@@ -3,6 +3,7 @@ import * as lensoContractRuntime from "@lenso/contract-runtime";
 
 export const CAPABILITY_ID = "example.profile@1";
 export const DESCRIPTOR_VERSION = "1.0.0";
+export const DESCRIPTOR_DIGEST = "sha256:c98903ce7d5b1e28269bfbf78adc3a8570e4f3ba78a18b41fbf9a55d6a85a8bf";
 export const PORTABLE = true;
 export const CROSS_LANE_TRANSFER = false;
 
@@ -17,6 +18,14 @@ export type RuntimeFailure = lensoContractRuntime.RuntimeFailure;
 export type UnknownDomainError = lensoContractRuntime.UnknownDomainError;
 export type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;
 export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;
+
+export interface CapabilityContractReference<Client> {
+  readonly capability_id: string;
+  readonly descriptor_version: string;
+  readonly descriptor_digest: string;
+  readonly generated_client: string;
+  readonly __client?: Client;
+}
 
 export interface CorpusRoundTripRequest {
   value: Record<string, unknown>;
@@ -84,6 +93,8 @@ export interface ProfileProvider {
   corpus_round_trip(context: InvocationContext, request: CorpusRoundTripRequest): Promise<CorpusRoundTripResult>;
   round_trip(context: InvocationContext, request: RoundTripRequest): Promise<RoundTripResult>;
 }
+
+export const PROFILE_CONTRACT: CapabilityContractReference<ProfileClient> = { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient" };
 
 export type ProviderDispatchOutcome =
   | { readonly kind: "success"; readonly value: unknown }

@@ -9,6 +9,12 @@ use serde_json::Value;
 mod proof;
 mod strict_json;
 
+/// Runtime-neutral values shared by Authoring V2 execution profiles.
+///
+/// This module does not define a transport envelope. Process and Bun adapters
+/// wrap these values in their own versioned protocols.
+pub mod authoring;
+
 pub use proof::{
     canonicalize_proof_value, child_proof_message, handshake_params_digest, host_proof_message,
 };

@@ -316,7 +316,7 @@ function validatePeerLimits(value: unknown): asserts value is PeerLimits {
   }
 }
 
-function validateExtension(value: unknown): asserts value is InvocationExtension {
+export function validateExtension(value: unknown): asserts value is InvocationExtension {
   const extension = record(value, "Invocation Extension");
   exactKeys(
     extension,

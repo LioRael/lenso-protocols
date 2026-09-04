@@ -1,6 +1,49 @@
 //! Runtime-neutral authoring primitives for strongly typed Lenso Plugins.
 
-use std::{cell::OnceCell, ops::Deref, rc::Rc};
+use std::{cell::OnceCell, marker::PhantomData, ops::Deref, rc::Rc};
+
+/// Generated exact Capability reference used by dependency declarations.
+///
+/// It carries contract identity and a zero-sized client type witness without
+/// selecting a provider or depending on any product-specific SDK.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CapabilityReference<C> {
+    capability_id: &'static str,
+    descriptor_version: &'static str,
+    descriptor_digest: &'static str,
+    client: PhantomData<fn() -> C>,
+}
+
+impl<C> CapabilityReference<C> {
+    #[must_use]
+    pub const fn new(
+        capability_id: &'static str,
+        descriptor_version: &'static str,
+        descriptor_digest: &'static str,
+    ) -> Self {
+        Self {
+            capability_id,
+            descriptor_version,
+            descriptor_digest,
+            client: PhantomData,
+        }
+    }
+
+    #[must_use]
+    pub const fn capability_id(&self) -> &'static str {
+        self.capability_id
+    }
+
+    #[must_use]
+    pub const fn descriptor_version(&self) -> &'static str {
+        self.descriptor_version
+    }
+
+    #[must_use]
+    pub const fn descriptor_digest(&self) -> &'static str {
+        self.descriptor_digest
+    }
+}
 
 /// One Plugin operation failure with an explicit Domain/Runtime split.
 ///
@@ -58,6 +101,17 @@ pub trait CapabilityClient: Sized + 'static {
     /// Connects this client to one Plugin Instance's resolved dependencies.
     fn from_dependencies(dependencies: &Self::Dependencies) -> Result<Self, Self::Error>;
 
+    /// Connects this client to one source-named requirement.
+    ///
+    /// Generated clients override this method to narrow the dependency view by
+    /// exact requirement identity. The default preserves older projections.
+    fn from_requirement(
+        dependencies: &Self::Dependencies,
+        _requirement_id: &str,
+    ) -> Result<Self, Self::Error> {
+        Self::from_dependencies(dependencies)
+    }
+
     /// Creates the adapter failure for an invalid second connection attempt.
     fn already_connected() -> Self::Error;
 }
@@ -69,6 +123,14 @@ pub trait CapabilityClientMany: CapabilityClient {
     fn many_from_dependencies(
         dependencies: &Self::Dependencies,
     ) -> Result<Vec<BoundCapabilityClient<Self>>, Self::Error>;
+
+    /// Connects every provider bound to one source-named requirement.
+    fn many_from_requirement(
+        dependencies: &Self::Dependencies,
+        _requirement_id: &str,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, Self::Error> {
+        Self::many_from_dependencies(dependencies)
+    }
 }
 
 /// One typed Capability client paired with its App-local provider Instance key.
@@ -131,6 +193,16 @@ impl<C: CapabilityClient> Port<C> {
     /// Connects the Port from this Plugin Instance's resolved dependencies.
     pub fn connect(&self, dependencies: &C::Dependencies) -> Result<(), C::Error> {
         let client = C::from_dependencies(dependencies)?;
+        self.client.set(client).map_err(|_| C::already_connected())
+    }
+
+    /// Connects the Port through one exact source declaration.
+    pub fn connect_requirement(
+        &self,
+        dependencies: &C::Dependencies,
+        requirement_id: &str,
+    ) -> Result<(), C::Error> {
+        let client = C::from_requirement(dependencies, requirement_id)?;
         self.client.set(client).map_err(|_| C::already_connected())
     }
 
@@ -204,6 +276,18 @@ impl<C: CapabilityClientMany> ManyPort<C> {
             .map_err(|_| C::already_connected())
     }
 
+    /// Connects only providers selected for one exact source declaration.
+    pub fn connect_requirement(
+        &self,
+        dependencies: &C::Dependencies,
+        requirement_id: &str,
+    ) -> Result<(), C::Error> {
+        let clients = C::many_from_requirement(dependencies, requirement_id)?;
+        self.clients
+            .set(clients)
+            .map_err(|_| C::already_connected())
+    }
+
     /// Returns whether lifecycle activation connected this Port.
     #[must_use]
     pub fn is_connected(&self) -> bool {
@@ -256,7 +340,8 @@ impl<C: CapabilityClientMany> Deref for ManyPort<C> {
 /// Common imports for a Plugin authoring frontend.
 pub mod prelude {
     pub use crate::{
-        BoundCapabilityClient, CapabilityClient, CapabilityClientMany, ManyPort, PluginError, Port,
+        BoundCapabilityClient, CapabilityClient, CapabilityClientMany, CapabilityReference,
+        ManyPort, PluginError, Port,
     };
 }
 
@@ -337,5 +422,79 @@ mod tests {
 
         let runtime = PluginError::<&str, _>::runtime("cancelled").map_domain(str::len);
         assert_eq!(runtime, PluginError::Runtime("cancelled"));
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct NamedClient(String);
+
+    impl CapabilityClient for NamedClient {
+        type Dependencies = ();
+        type Error = ExampleError;
+
+        const CAPABILITY_ID: &'static str = "example.store@1";
+        const DESCRIPTOR_VERSION: &'static str = "1.0.0";
+
+        fn from_dependencies(_dependencies: &Self::Dependencies) -> Result<Self, Self::Error> {
+            Ok(Self("legacy".to_owned()))
+        }
+
+        fn from_requirement(
+            _dependencies: &Self::Dependencies,
+            requirement_id: &str,
+        ) -> Result<Self, Self::Error> {
+            Ok(Self(requirement_id.to_owned()))
+        }
+
+        fn already_connected() -> Self::Error {
+            ExampleError::AlreadyConnected
+        }
+    }
+
+    impl CapabilityClientMany for NamedClient {
+        fn many_from_dependencies(
+            _dependencies: &Self::Dependencies,
+        ) -> Result<Vec<BoundCapabilityClient<Self>>, Self::Error> {
+            Ok(Vec::new())
+        }
+
+        fn many_from_requirement(
+            _dependencies: &Self::Dependencies,
+            requirement_id: &str,
+        ) -> Result<Vec<BoundCapabilityClient<Self>>, Self::Error> {
+            Ok(vec![BoundCapabilityClient::new(
+                format!("{requirement_id}-provider"),
+                Self(requirement_id.to_owned()),
+            )])
+        }
+    }
+
+    #[test]
+    fn named_ports_pass_the_exact_source_requirement_to_generated_clients() {
+        let source = Port::<NamedClient>::new();
+        let destination = Port::<NamedClient>::new();
+        source.connect_requirement(&(), "source").unwrap();
+        destination.connect_requirement(&(), "destination").unwrap();
+        assert_eq!(source.0, "source");
+        assert_eq!(destination.0, "destination");
+
+        let stores = ManyPort::<NamedClient>::new();
+        stores.connect_requirement(&(), "stores").unwrap();
+        assert_eq!(stores[0].provider_instance(), "stores-provider");
+        assert_eq!(stores[0].0, "stores");
+    }
+
+    #[test]
+    fn generated_capability_reference_is_typed_and_provider_free() {
+        let reference = CapabilityReference::<NamedClient>::new(
+            "example.store@1",
+            "1.0.0",
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        assert_eq!(reference.capability_id(), "example.store@1");
+        assert_eq!(reference.descriptor_version(), "1.0.0");
+        assert_eq!(
+            reference.descriptor_digest(),
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
     }
 }

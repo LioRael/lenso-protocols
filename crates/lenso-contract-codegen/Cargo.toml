@@ -1,6 +1,6 @@
 [package]
 name = "lenso-contract-codegen"
-version = "0.6.9"
+version = "0.7.0"
 edition.workspace = true
 license.workspace = true
 publish = true
@@ -12,6 +12,7 @@ lenso-contract-authoring = { version = "0.1.1", path = "../lenso-contract-author
 regex.workspace = true
 serde_json.workspace = true
 semver.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

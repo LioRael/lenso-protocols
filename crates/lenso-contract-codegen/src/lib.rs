@@ -17,6 +17,7 @@ use std::{
 
 use regex::Regex;
 use serde_json::{Map, Value};
+use sha2::{Digest as _, Sha256};
 
 mod browser;
 mod ir;
@@ -74,6 +75,7 @@ fn contract_ir(descriptor: &Descriptor) -> ContractIr {
     ContractIr {
         capability_id: descriptor.capability_id.clone(),
         version: descriptor.version.clone(),
+        descriptor_digest: descriptor.digest.clone(),
         portable: descriptor.portable,
         cross_lane_transfer: descriptor.cross_lane_transfer,
         operations: descriptor
@@ -211,6 +213,7 @@ pub struct Descriptor {
     capability_id: String,
     capability_major: u64,
     version: String,
+    digest: String,
     parsed_version: Version,
     portable: bool,
     cross_lane_transfer: bool,
@@ -234,6 +237,12 @@ impl Descriptor {
     #[must_use]
     pub fn version(&self) -> &str {
         &self.version
+    }
+
+    /// Returns the canonical digest of the resolved Descriptor and Schemas.
+    #[must_use]
+    pub fn descriptor_digest(&self) -> &str {
+        &self.digest
     }
 
     /// Returns whether the Capability is intended to cross Runtime Adapters.
@@ -265,6 +274,8 @@ pub struct GeneratedMetadata {
     pub capability_id: String,
     /// Exact Descriptor `SemVer`.
     pub descriptor_version: String,
+    /// Canonical SHA-256 digest of the resolved Descriptor and Schemas.
+    pub descriptor_digest: String,
     /// Whether the source Descriptor is portable.
     pub portable: bool,
     /// Whether generated native values may transfer across Execution Lanes.
@@ -587,15 +598,83 @@ pub fn load_descriptor(path: &Path) -> Result<Descriptor, CodegenError> {
     }
     operations.sort_by(|left, right| left.name.cmp(&right.name));
 
+    let capability_id = format!("{identity}@{identity_major}");
+    let descriptor_digest = resolved_descriptor_digest(
+        &capability_id,
+        &version,
+        portable,
+        cross_lane_transfer,
+        &operations,
+    );
     Ok(Descriptor {
-        capability_id: format!("{identity}@{identity_major}"),
+        capability_id,
         capability_major: identity_major,
         version,
+        digest: descriptor_digest,
         parsed_version,
         portable,
         cross_lane_transfer,
         operations,
     })
+}
+
+fn resolved_descriptor_digest(
+    capability_id: &str,
+    version: &str,
+    portable: bool,
+    cross_lane_transfer: bool,
+    operations: &[Operation],
+) -> String {
+    let operations = operations
+        .iter()
+        .map(|operation| {
+            serde_json::json!({
+                "name": operation.name,
+                "interaction": operation.interaction,
+                "request_schema": operation.request_schema,
+                "response_schema": operation.response_schema,
+                "domain_error_schema": operation.domain_error_schema,
+            })
+        })
+        .collect::<Vec<_>>();
+    let value = serde_json::json!({
+        "capability_id": capability_id,
+        "version": version,
+        "portable": portable,
+        "cross_lane_transfer": cross_lane_transfer,
+        "operations": operations,
+    });
+    let canonical = canonicalize_json(&value);
+    format!("sha256:{:x}", Sha256::digest(canonical.as_bytes()))
+}
+
+fn canonicalize_json(value: &Value) -> String {
+    match value {
+        Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(canonicalize_json)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Value::Object(object) => {
+            let mut keys = object.keys().collect::<Vec<_>>();
+            keys.sort();
+            format!(
+                "{{{}}}",
+                keys.into_iter()
+                    .map(|key| format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("object keys serialize"),
+                        canonicalize_json(&object[key])
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+        _ => serde_json::to_string(value).expect("JSON values serialize"),
+    }
 }
 
 fn required_string(object: &Map<String, Value>, key: &str) -> Result<String, CodegenError> {
@@ -1888,6 +1967,7 @@ fn generation_input(path: &Path) -> Result<(GeneratedMetadata, ContractIr), Code
     let metadata = GeneratedMetadata {
         capability_id: descriptor.capability_id.clone(),
         descriptor_version: descriptor.version.clone(),
+        descriptor_digest: descriptor.digest.clone(),
         portable: descriptor.portable,
         cross_lane_transfer: descriptor.cross_lane_transfer,
     };
@@ -3856,7 +3936,7 @@ fn generate_rust(contract: &ContractIr) -> String {
     )
     .expect("writing to a String cannot fail");
     output.push_str(
-        "use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};\n",
+        "use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany, CapabilityReference};\n",
     );
     writeln!(
         output,
@@ -3868,6 +3948,12 @@ fn generate_rust(contract: &ContractIr) -> String {
         output,
         "pub const DESCRIPTOR_VERSION: &str = {};",
         quote_string(&contract.version)
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "pub const DESCRIPTOR_DIGEST: &str = {};",
+        quote_string(&contract.descriptor_digest)
     )
     .expect("writing to a String cannot fail");
     writeln!(output, "pub const PORTABLE: bool = {};", contract.portable)
@@ -3885,7 +3971,7 @@ fn generate_rust(contract: &ContractIr) -> String {
     .expect("writing to a String cannot fail");
     write!(
         output,
-        "pub const {capability_const}_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;\n\n"
+        "pub const {capability_const}_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;\npub const {capability_const}_DESCRIPTOR_DIGEST: &str = DESCRIPTOR_DIGEST;\npub const {capability_const}_CONTRACT: CapabilityReference<{capability_name}Client> = CapabilityReference::new(CAPABILITY_ID, DESCRIPTOR_VERSION, DESCRIPTOR_DIGEST);\n\n"
     )
     .expect("writing to a String cannot fail");
 
@@ -4037,7 +4123,7 @@ fn generate_rust(contract: &ContractIr) -> String {
     };
     write!(
         output,
-        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &PluginDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    type Dependencies = PluginDependencies;\n    type Error = RuntimeFailure;\n\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &PluginDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n\n    fn already_connected() -> RuntimeFailure {{\n        RuntimeFailure::PluginFailure {{\n            detail: format!(\"Capability Port {{CAPABILITY_ID}} was connected more than once\"),\n        }}\n    }}\n}}\n\nimpl CapabilityClientMany for {capability_name}Client {{\n    fn many_from_dependencies(\n        dependencies: &PluginDependencies,\n    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {{\n        dependencies\n            .bindings()\n            .iter()\n            .filter(|binding| binding.capability_id() == CAPABILITY_ID)\n            .map(|binding| {{\n                Ok(BoundCapabilityClient::new(\n                    binding.provider_instance(),\n                    Self {{\n{}\n                    }},\n                ))\n            }})\n            .collect()\n    }}\n}}\n\n",
+        "#[derive(Debug)]\npub struct {capability_name}Client {{\n{}\n}}\nimpl {capability_name}Client {{\n{}    pub fn from_dependencies(dependencies: &PluginDependencies) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_dependencies(dependencies)\n    }}\n\n    pub fn from_requirement(\n        dependencies: &PluginDependencies,\n        requirement_id: &str,\n    ) -> Result<Self, RuntimeFailure> {{\n        <Self as CapabilityClient>::from_requirement(dependencies, requirement_id)\n    }}\n\n{}\n}}\n\nimpl CapabilityClient for {capability_name}Client {{\n    type Dependencies = PluginDependencies;\n    type Error = RuntimeFailure;\n\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n\n    fn from_dependencies(dependencies: &PluginDependencies) -> Result<Self, RuntimeFailure> {{\n        Ok(Self {{\n{}\n        }})\n    }}\n\n    fn from_requirement(\n        dependencies: &PluginDependencies,\n        requirement_id: &str,\n    ) -> Result<Self, RuntimeFailure> {{\n        let dependencies = dependencies.requirement(requirement_id)?;\n        Self::from_dependencies(&dependencies)\n    }}\n\n    fn already_connected() -> RuntimeFailure {{\n        RuntimeFailure::PluginFailure {{\n            detail: format!(\"Capability Port {{CAPABILITY_ID}} was connected more than once\"),\n        }}\n    }}\n}}\n\nimpl CapabilityClientMany for {capability_name}Client {{\n    fn many_from_dependencies(\n        dependencies: &PluginDependencies,\n    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {{\n        dependencies\n            .bindings()\n            .iter()\n            .filter(|binding| binding.capability_id() == CAPABILITY_ID)\n            .map(|binding| {{\n                Ok(BoundCapabilityClient::new(\n                    binding.provider_instance(),\n                    Self {{\n{}\n                    }},\n                ))\n            }})\n            .collect()\n    }}\n\n    fn many_from_requirement(\n        dependencies: &PluginDependencies,\n        requirement_id: &str,\n    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {{\n        let dependencies = dependencies.requirement(requirement_id)?;\n        Self::many_from_dependencies(&dependencies)\n    }}\n}}\n\n",
         client_fields.join("\n"),
         new_method,
         client_methods.join("\n\n"),
@@ -4469,6 +4555,7 @@ fn generate_typescript(contract: &ContractIr) -> String {
             .and_then(|identity| identity.rsplit('.').next())
             .unwrap_or("Capability"),
     );
+    let capability_const = screaming_snake_case(&capability_name);
     let mut types = TypeScriptTypes::new();
     let mut clients = Vec::new();
     let mut providers = Vec::new();
@@ -4608,6 +4695,12 @@ fn generate_typescript(contract: &ContractIr) -> String {
         quote_string(&contract.version)
     )
     .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "export const DESCRIPTOR_DIGEST = {};",
+        quote_string(&contract.descriptor_digest)
+    )
+    .expect("writing to a String cannot fail");
     writeln!(output, "export const PORTABLE = {};", contract.portable)
         .expect("writing to a String cannot fail");
     write!(
@@ -4616,7 +4709,7 @@ fn generate_typescript(contract: &ContractIr) -> String {
         contract.cross_lane_transfer
     )
     .expect("writing to a String cannot fail");
-    output.push_str("export type Int64 = lensoContractRuntime.Int64;\nexport type Uint64 = lensoContractRuntime.Uint64;\nexport type Bytes = lensoContractRuntime.Bytes;\nexport type Timestamp = lensoContractRuntime.Timestamp;\nexport type Duration = lensoContractRuntime.Duration;\nexport type OptionalValue<T> = lensoContractRuntime.OptionalValue<T>;\nexport type InvocationContext = lensoContractRuntime.InvocationContext;\nexport type RuntimeFailure = lensoContractRuntime.RuntimeFailure;\nexport type UnknownDomainError = lensoContractRuntime.UnknownDomainError;\nexport type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;\nexport type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;\n\n");
+    output.push_str("export type Int64 = lensoContractRuntime.Int64;\nexport type Uint64 = lensoContractRuntime.Uint64;\nexport type Bytes = lensoContractRuntime.Bytes;\nexport type Timestamp = lensoContractRuntime.Timestamp;\nexport type Duration = lensoContractRuntime.Duration;\nexport type OptionalValue<T> = lensoContractRuntime.OptionalValue<T>;\nexport type InvocationContext = lensoContractRuntime.InvocationContext;\nexport type RuntimeFailure = lensoContractRuntime.RuntimeFailure;\nexport type UnknownDomainError = lensoContractRuntime.UnknownDomainError;\nexport type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;\nexport type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;\n\nexport interface CapabilityContractReference<Client> {\n  readonly capability_id: string;\n  readonly descriptor_version: string;\n  readonly descriptor_digest: string;\n  readonly generated_client: string;\n  readonly __client?: Client;\n}\n\n");
     if has_event_operations {
         output.push_str("export type EventAdmission = lensoContractRuntime.EventAdmission;\nexport type EventPublishResult = lensoContractRuntime.EventPublishResult;\n\n");
     }
@@ -4637,6 +4730,12 @@ fn generate_typescript(contract: &ContractIr) -> String {
         "\nexport interface {capability_name}Client {{\n{}\n}}\n\nexport interface {capability_name}Provider {{\n{}\n}}\n",
         clients.join("\n"),
         providers.join("\n")
+    )
+    .expect("writing to a String cannot fail");
+    writeln!(
+        output,
+        "\nexport const {capability_const}_CONTRACT: CapabilityContractReference<{capability_name}Client> = {{ capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: {} }};",
+        quote_string(&format!("{capability_name}Client")),
     )
     .expect("writing to a String cannot fail");
     write!(
