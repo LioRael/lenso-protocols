@@ -305,6 +305,14 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
+            .contains("macro_rules! __lenso_native_lower_object_conversation")
+    );
+    assert!(artifacts.rust.contains(
+        "<$plugin as $crate::ConversationProvider>::chat(plugin.as_ref(), context, request).await"
+    ));
+    assert!(
+        artifacts
+            .rust
             .contains("macro_rules! __lenso_native_endpoints_conversation")
     );
     assert!(
@@ -349,6 +357,14 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
             .rust
             .contains("macro_rules! __lenso_native_endpoints_notifications")
     );
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_native_lower_object_notifications")
+    );
+    assert!(artifacts.rust.contains(
+        "<$plugin as $crate::NotificationsProvider>::notify(plugin.as_ref(), context, event).await"
+    ));
     assert!(artifacts.rust.contains(
         "fn notify(&self, context: InvocationContext, event: NotifyRequest) -> LocalBoxFuture<'static, Result<(), RuntimeFailure>>;"
     ));
@@ -486,8 +502,40 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .rust
+            .contains("macro_rules! __lenso_native_lower_object_profile")
+    );
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_native_lower_trait_object_profile")
+    );
+    assert!(
+        artifacts.rust.contains(
+            "let result = <$plugin>::round_trip(plugin.as_ref(), context, request).await;"
+        )
+    );
+    assert!(artifacts.rust.contains(
+        "<$plugin as $crate::ProfileProvider>::round_trip(plugin.as_ref(), context, request).await"
+    ));
+    assert!(
+        artifacts
+            .rust
+            .contains("macro_rules! __lenso_required_optional_profile_client")
+    );
+    assert!(
+        artifacts
+            .rust
             .contains("macro_rules! __lenso_required_many_profile_client")
     );
+    assert!(artifacts.rust.contains(
+        "($requirement_id:literal) => { concat!(\"{\\\"requirement_id\\\":\", stringify!($requirement_id), \",\\\"capability_id\\\":\\\"example.profile@1\\\",\\\"descriptor_version\\\":\\\"1.0.0\\\",\\\"cardinality\\\":\\\"one\\\"}\") };"
+    ));
+    assert!(artifacts.rust.contains(
+        "($requirement_id:literal) => { concat!(\"{\\\"requirement_id\\\":\", stringify!($requirement_id), \",\\\"capability_id\\\":\\\"example.profile@1\\\",\\\"descriptor_version\\\":\\\"1.0.0\\\",\\\"cardinality\\\":\\\"optional\\\"}\") };"
+    ));
+    assert!(artifacts.rust.contains(
+        "($requirement_id:literal) => { concat!(\"{\\\"requirement_id\\\":\", stringify!($requirement_id), \",\\\"capability_id\\\":\\\"example.profile@1\\\",\\\"descriptor_version\\\":\\\"1.0.0\\\",\\\"cardinality\\\":\\\"many\\\"}\") };"
+    ));
     assert!(
         artifacts
             .rust

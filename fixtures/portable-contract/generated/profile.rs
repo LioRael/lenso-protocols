@@ -20,11 +20,23 @@ macro_rules! __lenso_provided_profile { () => { "{\"capability_id\":\"example.pr
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_profile_client { () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+macro_rules! __lenso_required_profile_client {
+    () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" };
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}") };
+}
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_many_profile_client { () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
+macro_rules! __lenso_required_optional_profile_client {
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"optional\"}") };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_profile_client {
+    () => { "{\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" };
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"example.profile@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}") };
+}
 
 pub const CORPUS_ROUND_TRIP_OPERATION: &str = "corpus_round_trip";
 pub const ROUND_TRIP_OPERATION: &str = "round_trip";
@@ -433,6 +445,56 @@ macro_rules! __lenso_native_lower_profile {
             ::std::boxed::Box::pin(async move {
                 let result = <$plugin>::round_trip(&plugin, context, request).await;
                 $crate::__LensoIntoProfileRoundTripResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_object_profile {
+    ($object:ty, $plugin:ty, $support:path) => {
+        use $support as __LensoNativeSupportProfile;
+        impl $crate::ProfileProvider for $object {
+        fn corpus_round_trip(&self, context: __LensoNativeSupportProfile::InvocationContext, request: $crate::CorpusRoundTripRequest) -> __LensoNativeSupportProfile::NativeRequestFuture<$crate::ProfileCorpusRoundTrip> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                let result = <$plugin>::corpus_round_trip(plugin.as_ref(), context, request).await;
+                $crate::__LensoIntoProfileCorpusRoundTripResult::__lenso_into_result(result)
+            })
+        }
+        fn round_trip(&self, context: __LensoNativeSupportProfile::InvocationContext, request: $crate::RoundTripRequest) -> __LensoNativeSupportProfile::NativeRequestFuture<$crate::ProfileRoundTrip> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                let result = <$plugin>::round_trip(plugin.as_ref(), context, request).await;
+                $crate::__LensoIntoProfileRoundTripResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_trait_object_profile {
+    ($object:ty, $plugin:ty, $support:path) => {
+        use $support as __LensoNativeSupportProfile;
+        impl $crate::ProfileProvider for $object {
+        fn corpus_round_trip(&self, context: __LensoNativeSupportProfile::InvocationContext, request: $crate::CorpusRoundTripRequest) -> __LensoNativeSupportProfile::NativeRequestFuture<$crate::ProfileCorpusRoundTrip> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                <$plugin as $crate::ProfileProvider>::corpus_round_trip(plugin.as_ref(), context, request).await
+            })
+        }
+        fn round_trip(&self, context: __LensoNativeSupportProfile::InvocationContext, request: $crate::RoundTripRequest) -> __LensoNativeSupportProfile::NativeRequestFuture<$crate::ProfileRoundTrip> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                <$plugin as $crate::ProfileProvider>::round_trip(plugin.as_ref(), context, request).await
             })
         }
         }

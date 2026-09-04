@@ -20,11 +20,23 @@ macro_rules! __lenso_provided_notifications { () => { "{\"capability_id\":\"exam
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_notifications_client { () => { "{\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+macro_rules! __lenso_required_notifications_client {
+    () => { "{\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" };
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}") };
+}
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_many_notifications_client { () => { "{\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
+macro_rules! __lenso_required_optional_notifications_client {
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"optional\"}") };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_notifications_client {
+    () => { "{\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" };
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"example.notifications@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}") };
+}
 
 pub const NOTIFY_OPERATION: &str = "notify";
 
@@ -165,6 +177,41 @@ macro_rules! __lenso_native_lower_notifications {
             ::std::boxed::Box::pin(async move {
                 let result = <$plugin>::notify(&plugin, context, event).await;
                 $crate::__LensoIntoNotificationsNotifyEventResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_object_notifications {
+    ($object:ty, $plugin:ty, $support:path) => {
+        use $support as __LensoNativeSupportNotifications;
+        impl $crate::NotificationsProvider for $object {
+        fn notify(&self, context: __LensoNativeSupportNotifications::InvocationContext, event: $crate::NotifyRequest) -> __LensoNativeSupportNotifications::LocalBoxFuture<'static, Result<(), __LensoNativeSupportNotifications::RuntimeFailure>> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                let result = <$plugin>::notify(plugin.as_ref(), context, event).await;
+                $crate::__LensoIntoNotificationsNotifyEventResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_trait_object_notifications {
+    ($object:ty, $plugin:ty, $support:path) => {
+        use $support as __LensoNativeSupportNotifications;
+        impl $crate::NotificationsProvider for $object {
+        fn notify(&self, context: __LensoNativeSupportNotifications::InvocationContext, event: $crate::NotifyRequest) -> __LensoNativeSupportNotifications::LocalBoxFuture<'static, Result<(), __LensoNativeSupportNotifications::RuntimeFailure>> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                <$plugin as $crate::NotificationsProvider>::notify(plugin.as_ref(), context, event).await
             })
         }
         }
