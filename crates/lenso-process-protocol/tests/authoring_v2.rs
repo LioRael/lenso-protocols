@@ -284,3 +284,126 @@ fn exact_initialized_echo_rejects_session_and_profile_changes() {
         "initialized result does not exactly echo initialization"
     );
 }
+
+#[test]
+fn event_and_stream_values_preserve_endpoint_route_and_session_identity() {
+    let values = fixture();
+    let initialize: InitializeParams = field(&values, "initialize");
+    let invoke: InvokeParams = field(&values, "invoke");
+    let outbound: OutboundCallParams = field(&values, "outbound_call");
+
+    let event = EventPublishParams {
+        session: invoke.session.clone(),
+        correlation_id: invoke.correlation_id.clone(),
+        endpoint_id: invoke.endpoint_id.clone(),
+        capability_id: invoke.capability_id.clone(),
+        descriptor_version: invoke.descriptor_version.clone(),
+        descriptor_digest: invoke.descriptor_digest.clone(),
+        operation: "changed".to_owned(),
+        scope: invoke.scope.clone(),
+        event: serde_json::json!({"key": "a"}),
+    };
+    event.validate_against(&initialize).unwrap();
+    EventPublishResult {
+        session: event.session.clone(),
+        correlation_id: event.correlation_id.clone(),
+        outcome: EventPublishOutcome::Accepted,
+    }
+    .validate_for(&event)
+    .unwrap();
+
+    let outbound_event = OutboundEventPublishParams {
+        session: outbound.session.clone(),
+        correlation_id: outbound.correlation_id.clone(),
+        requirement_id: outbound.requirement_id.clone(),
+        route_id: outbound.route_id.clone(),
+        operation: "changed".to_owned(),
+        scope: outbound.scope.clone(),
+        event: serde_json::json!({"key": "a"}),
+    };
+    outbound_event
+        .validate_against(&initialize, &invoke.scope, true)
+        .unwrap();
+
+    let open = StreamOpenParams {
+        session: invoke.session.clone(),
+        correlation_id: "3".to_owned(),
+        endpoint_id: invoke.endpoint_id.clone(),
+        capability_id: invoke.capability_id.clone(),
+        descriptor_version: invoke.descriptor_version.clone(),
+        descriptor_digest: invoke.descriptor_digest.clone(),
+        operation: "watch".to_owned(),
+        scope: invoke.scope.clone(),
+        request: serde_json::json!({"key": "a"}),
+    };
+    open.validate_against(&initialize).unwrap();
+    StreamOpenResult {
+        session: open.session.clone(),
+        correlation_id: open.correlation_id.clone(),
+        outcome: StreamOpenOutcome::Opened {
+            stream_id: "1".to_owned(),
+        },
+    }
+    .validate_for(&open)
+    .unwrap();
+
+    let send = StreamSendParams {
+        session: invoke.session.clone(),
+        correlation_id: "4".to_owned(),
+        stream_id: "1".to_owned(),
+        sequence: "0".to_owned(),
+        message: serde_json::json!({"text": "hello"}),
+    };
+    send.validate_for(&initialize.identity).unwrap();
+    StreamActionResult {
+        session: send.session.clone(),
+        correlation_id: send.correlation_id.clone(),
+        stream_id: send.stream_id.clone(),
+        outcome: StreamActionOutcome::Accepted,
+    }
+    .validate_for_send(&send)
+    .unwrap();
+
+    let receive = StreamReceiveParams {
+        session: invoke.session,
+        correlation_id: "5".to_owned(),
+        stream_id: "1".to_owned(),
+    };
+    receive.validate_for(&initialize.identity).unwrap();
+    StreamReceiveResult {
+        session: receive.session.clone(),
+        correlation_id: receive.correlation_id.clone(),
+        stream_id: receive.stream_id.clone(),
+        outcome: StreamReceiveOutcome::Terminal {
+            outcome: StreamTerminalOutcome::Success,
+        },
+    }
+    .validate_for(&receive)
+    .unwrap();
+}
+
+#[test]
+fn stream_results_reject_cross_session_and_cross_stream_confusion() {
+    let initialize: InitializeParams = field(&fixture(), "initialize");
+    let request = StreamReceiveParams {
+        session: initialize.identity.session.clone(),
+        correlation_id: "8".to_owned(),
+        stream_id: "2".to_owned(),
+    };
+    let mut result = StreamReceiveResult {
+        session: request.session.clone(),
+        correlation_id: request.correlation_id.clone(),
+        stream_id: "3".to_owned(),
+        outcome: StreamReceiveOutcome::PeerHalfClosed,
+    };
+    assert_eq!(
+        result.validate_for(&request).unwrap_err().detail(),
+        "stream result identity mismatch"
+    );
+    result.stream_id = request.stream_id.clone();
+    result.session = "session-2".to_owned();
+    assert_eq!(
+        result.validate_for(&request).unwrap_err().detail(),
+        "response identity mismatch"
+    );
+}

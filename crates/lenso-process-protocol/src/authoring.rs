@@ -308,6 +308,169 @@ pub struct OutboundCallParams {
 
 pub type OutboundCallResult = InvocationResult;
 
+/// Host-to-plugin publication for one provided Event operation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EventPublishParams {
+    pub session: String,
+    pub correlation_id: String,
+    pub endpoint_id: String,
+    pub capability_id: String,
+    pub descriptor_version: String,
+    pub descriptor_digest: String,
+    pub operation: String,
+    pub scope: InvocationScope,
+    pub event: Value,
+}
+
+/// Plugin-to-Host Event publication through one exact Plan route.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutboundEventPublishParams {
+    pub session: String,
+    pub correlation_id: String,
+    pub requirement_id: String,
+    pub route_id: String,
+    pub operation: String,
+    pub scope: InvocationScope,
+    pub event: Value,
+}
+
+/// Commit acknowledgement for one bounded Event admission.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum EventPublishOutcome {
+    Accepted,
+    Runtime { failure: RuntimeFailure },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EventPublishResult {
+    pub session: String,
+    pub correlation_id: String,
+    pub outcome: EventPublishOutcome,
+}
+
+pub type OutboundEventPublishResult = EventPublishResult;
+
+/// Host-to-plugin open request for one provided bidirectional Stream operation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamOpenParams {
+    pub session: String,
+    pub correlation_id: String,
+    pub endpoint_id: String,
+    pub capability_id: String,
+    pub descriptor_version: String,
+    pub descriptor_digest: String,
+    pub operation: String,
+    pub scope: InvocationScope,
+    pub request: Value,
+}
+
+/// Plugin-to-Host Stream open through one exact Plan route.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutboundStreamOpenParams {
+    pub session: String,
+    pub correlation_id: String,
+    pub requirement_id: String,
+    pub route_id: String,
+    pub operation: String,
+    pub scope: InvocationScope,
+    pub request: Value,
+}
+
+/// Result of opening a Stream. The receiver owns the returned stream identity.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StreamOpenOutcome {
+    Opened { stream_id: String },
+    Domain { error: Value },
+    Runtime { failure: RuntimeFailure },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamOpenResult {
+    pub session: String,
+    pub correlation_id: String,
+    pub outcome: StreamOpenOutcome,
+}
+
+pub type OutboundStreamOpenResult = StreamOpenResult;
+
+/// One ordered message submitted to an open Stream session.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamSendParams {
+    pub session: String,
+    pub correlation_id: String,
+    pub stream_id: String,
+    pub sequence: String,
+    pub message: Value,
+}
+
+/// One pull for the next observable item from an open Stream session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamReceiveParams {
+    pub session: String,
+    pub correlation_id: String,
+    pub stream_id: String,
+}
+
+/// Half-closes the sender without closing its receive direction.
+pub type StreamCloseSendParams = StreamReceiveParams;
+
+/// Cancels a Stream session idempotently.
+pub type StreamCancelParams = StreamReceiveParams;
+
+/// Result of a Stream mutation after it was admitted by the receiver.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StreamActionOutcome {
+    Accepted,
+    Runtime { failure: RuntimeFailure },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamActionResult {
+    pub session: String,
+    pub correlation_id: String,
+    pub stream_id: String,
+    pub outcome: StreamActionOutcome,
+}
+
+/// Terminal result belongs to the Stream operation, not to one receive call.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StreamTerminalOutcome {
+    Success,
+    Domain { error: Value },
+}
+
+/// Next ordered item observed from a Stream session.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum StreamReceiveOutcome {
+    Message { sequence: String, message: Value },
+    PeerHalfClosed,
+    Terminal { outcome: StreamTerminalOutcome },
+    Runtime { failure: RuntimeFailure },
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamReceiveResult {
+    pub session: String,
+    pub correlation_id: String,
+    pub stream_id: String,
+    pub outcome: StreamReceiveOutcome,
+}
+
 /// Cancellation request. Acknowledgement does not imply execution settlement.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -747,6 +910,194 @@ impl OutboundCallParams {
         Ok(())
     }
 }
+impl EventPublishParams {
+    pub fn validate_against(&self, initialize: &InitializeParams) -> Result<(), ProtocolError> {
+        validate_provided_operation(
+            &self.session,
+            &self.correlation_id,
+            &self.endpoint_id,
+            &self.capability_id,
+            &self.descriptor_version,
+            &self.descriptor_digest,
+            &self.operation,
+            &self.scope,
+            initialize,
+            "event publication",
+        )
+    }
+}
+impl OutboundEventPublishParams {
+    pub fn validate_against(
+        &self,
+        initialize: &InitializeParams,
+        parent: &InvocationScope,
+        parent_active: bool,
+    ) -> Result<(), ProtocolError> {
+        validate_outbound_operation(
+            &self.session,
+            &self.correlation_id,
+            &self.requirement_id,
+            &self.route_id,
+            &self.operation,
+            &self.scope,
+            initialize,
+            parent,
+            parent_active,
+            "event publication",
+        )
+    }
+}
+impl EventPublishResult {
+    pub fn validate_for(&self, request: &EventPublishParams) -> Result<(), ProtocolError> {
+        self.validate_identity(&request.session, &request.correlation_id)
+    }
+
+    pub fn validate_for_outbound(
+        &self,
+        request: &OutboundEventPublishParams,
+    ) -> Result<(), ProtocolError> {
+        self.validate_identity(&request.session, &request.correlation_id)
+    }
+
+    fn validate_identity(&self, session: &str, correlation_id: &str) -> Result<(), ProtocolError> {
+        validate_echo(&self.session, &self.correlation_id, session, correlation_id)?;
+        if let EventPublishOutcome::Runtime { failure } = &self.outcome {
+            failure.validate()?;
+        }
+        Ok(())
+    }
+}
+impl StreamOpenParams {
+    pub fn validate_against(&self, initialize: &InitializeParams) -> Result<(), ProtocolError> {
+        validate_provided_operation(
+            &self.session,
+            &self.correlation_id,
+            &self.endpoint_id,
+            &self.capability_id,
+            &self.descriptor_version,
+            &self.descriptor_digest,
+            &self.operation,
+            &self.scope,
+            initialize,
+            "stream open",
+        )
+    }
+}
+impl OutboundStreamOpenParams {
+    pub fn validate_against(
+        &self,
+        initialize: &InitializeParams,
+        parent: &InvocationScope,
+        parent_active: bool,
+    ) -> Result<(), ProtocolError> {
+        validate_outbound_operation(
+            &self.session,
+            &self.correlation_id,
+            &self.requirement_id,
+            &self.route_id,
+            &self.operation,
+            &self.scope,
+            initialize,
+            parent,
+            parent_active,
+            "stream open",
+        )
+    }
+}
+impl StreamOpenResult {
+    pub fn validate_for(&self, request: &StreamOpenParams) -> Result<(), ProtocolError> {
+        self.validate_identity(&request.session, &request.correlation_id)
+    }
+
+    pub fn validate_for_outbound(
+        &self,
+        request: &OutboundStreamOpenParams,
+    ) -> Result<(), ProtocolError> {
+        self.validate_identity(&request.session, &request.correlation_id)
+    }
+
+    fn validate_identity(&self, session: &str, correlation_id: &str) -> Result<(), ProtocolError> {
+        validate_echo(&self.session, &self.correlation_id, session, correlation_id)?;
+        match &self.outcome {
+            StreamOpenOutcome::Opened { stream_id } => {
+                validate_decimal("stream_id", stream_id).map(|_| ())
+            }
+            StreamOpenOutcome::Domain { .. } => Ok(()),
+            StreamOpenOutcome::Runtime { failure } => failure.validate(),
+        }
+    }
+}
+impl StreamSendParams {
+    pub fn validate_for(&self, identity: &SessionIdentity) -> Result<(), ProtocolError> {
+        validate_stream_action(
+            &self.session,
+            &self.correlation_id,
+            &self.stream_id,
+            identity,
+        )?;
+        validate_decimal("sequence", &self.sequence).map(|_| ())
+    }
+}
+impl StreamReceiveParams {
+    pub fn validate_for(&self, identity: &SessionIdentity) -> Result<(), ProtocolError> {
+        validate_stream_action(
+            &self.session,
+            &self.correlation_id,
+            &self.stream_id,
+            identity,
+        )
+    }
+}
+impl StreamActionResult {
+    pub fn validate_for(&self, request: &StreamReceiveParams) -> Result<(), ProtocolError> {
+        validate_stream_result(
+            &self.session,
+            &self.correlation_id,
+            &self.stream_id,
+            &request.session,
+            &request.correlation_id,
+            &request.stream_id,
+        )?;
+        if let StreamActionOutcome::Runtime { failure } = &self.outcome {
+            failure.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_for_send(&self, request: &StreamSendParams) -> Result<(), ProtocolError> {
+        validate_stream_result(
+            &self.session,
+            &self.correlation_id,
+            &self.stream_id,
+            &request.session,
+            &request.correlation_id,
+            &request.stream_id,
+        )?;
+        if let StreamActionOutcome::Runtime { failure } = &self.outcome {
+            failure.validate()?;
+        }
+        Ok(())
+    }
+}
+impl StreamReceiveResult {
+    pub fn validate_for(&self, request: &StreamReceiveParams) -> Result<(), ProtocolError> {
+        validate_stream_result(
+            &self.session,
+            &self.correlation_id,
+            &self.stream_id,
+            &request.session,
+            &request.correlation_id,
+            &request.stream_id,
+        )?;
+        match &self.outcome {
+            StreamReceiveOutcome::Message { sequence, .. } => {
+                validate_decimal("sequence", sequence).map(|_| ())
+            }
+            StreamReceiveOutcome::Runtime { failure } => failure.validate(),
+            StreamReceiveOutcome::PeerHalfClosed | StreamReceiveOutcome::Terminal { .. } => Ok(()),
+        }
+    }
+}
 impl CancelParams {
     pub fn validate_for(&self, identity: &SessionIdentity) -> Result<(), ProtocolError> {
         validate_session(&self.session, identity)?;
@@ -803,6 +1154,117 @@ fn validate_descriptor(capability: &str, version: &str, digest: &str) -> Result<
     validate_token("capability_id", capability)?;
     validate_token("descriptor_version", version)?;
     validate_digest("descriptor_digest", digest)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "wire identity fields remain explicit"
+)]
+fn validate_provided_operation(
+    session: &str,
+    correlation_id: &str,
+    endpoint_id: &str,
+    capability_id: &str,
+    descriptor_version: &str,
+    descriptor_digest: &str,
+    operation: &str,
+    scope: &InvocationScope,
+    initialize: &InitializeParams,
+    interaction: &str,
+) -> Result<(), ProtocolError> {
+    validate_session(session, &initialize.identity)?;
+    validate_decimal("correlation_id", correlation_id)?;
+    validate_token("endpoint_id", endpoint_id)?;
+    validate_descriptor(capability_id, descriptor_version, descriptor_digest)?;
+    validate_token("operation", operation)?;
+    scope.validate()?;
+    let endpoint = initialize
+        .provided_endpoints
+        .iter()
+        .find(|endpoint| endpoint.endpoint_id == endpoint_id)
+        .ok_or_else(|| error(format!("{interaction} references an unknown endpoint_id")))?;
+    if endpoint.capability_id != capability_id
+        || endpoint.descriptor_version != descriptor_version
+        || endpoint.descriptor_digest != descriptor_digest
+    {
+        return Err(error(format!(
+            "{interaction} descriptor does not match its admitted endpoint"
+        )));
+    }
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "wire identity fields remain explicit"
+)]
+fn validate_outbound_operation(
+    session: &str,
+    correlation_id: &str,
+    requirement_id: &str,
+    route_id: &str,
+    operation: &str,
+    scope: &InvocationScope,
+    initialize: &InitializeParams,
+    parent: &InvocationScope,
+    parent_active: bool,
+    interaction: &str,
+) -> Result<(), ProtocolError> {
+    validate_session(session, &initialize.identity)?;
+    validate_decimal("correlation_id", correlation_id)?;
+    validate_requirement_id(requirement_id)?;
+    validate_token("route_id", route_id)?;
+    validate_token("operation", operation)?;
+    scope.validate_child_of(parent)?;
+    if !parent_active {
+        return Err(error(format!(
+            "closed parent scope cannot start an outbound {interaction}"
+        )));
+    }
+    let route = initialize
+        .routes
+        .iter()
+        .find(|route| route.route_id == route_id)
+        .ok_or_else(|| {
+            error(format!(
+                "outbound {interaction} references an unknown route_id"
+            ))
+        })?;
+    if route.requirement_id != requirement_id {
+        return Err(error("outbound route belongs to another requirement"));
+    }
+    Ok(())
+}
+
+fn validate_stream_action(
+    session: &str,
+    correlation_id: &str,
+    stream_id: &str,
+    identity: &SessionIdentity,
+) -> Result<(), ProtocolError> {
+    validate_session(session, identity)?;
+    validate_decimal("correlation_id", correlation_id)?;
+    validate_decimal("stream_id", stream_id).map(|_| ())
+}
+
+fn validate_stream_result(
+    session: &str,
+    correlation_id: &str,
+    stream_id: &str,
+    expected_session: &str,
+    expected_correlation_id: &str,
+    expected_stream_id: &str,
+) -> Result<(), ProtocolError> {
+    validate_echo(
+        session,
+        correlation_id,
+        expected_session,
+        expected_correlation_id,
+    )?;
+    if stream_id != expected_stream_id {
+        return Err(error("stream result identity mismatch"));
+    }
+    validate_decimal("stream_id", stream_id).map(|_| ())
 }
 fn validate_session(session: &str, identity: &SessionIdentity) -> Result<(), ProtocolError> {
     if session != identity.session {
