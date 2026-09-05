@@ -146,6 +146,102 @@ export interface OutboundCallParams {
   readonly payload: unknown;
 }
 export type OutboundCallResult = InvocationResult;
+export interface EventPublishParams {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly endpoint_id: string;
+  readonly capability_id: string;
+  readonly descriptor_version: string;
+  readonly descriptor_digest: string;
+  readonly operation: string;
+  readonly scope: InvocationScope;
+  readonly event: unknown;
+}
+export interface OutboundEventPublishParams {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly requirement_id: string;
+  readonly route_id: string;
+  readonly operation: string;
+  readonly scope: InvocationScope;
+  readonly event: unknown;
+}
+export type EventPublishOutcome =
+  | { readonly kind: "accepted" }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export interface EventPublishResult {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly outcome: EventPublishOutcome;
+}
+export type OutboundEventPublishResult = EventPublishResult;
+export interface StreamOpenParams {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly endpoint_id: string;
+  readonly capability_id: string;
+  readonly descriptor_version: string;
+  readonly descriptor_digest: string;
+  readonly operation: string;
+  readonly scope: InvocationScope;
+  readonly request: unknown;
+}
+export interface OutboundStreamOpenParams {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly requirement_id: string;
+  readonly route_id: string;
+  readonly operation: string;
+  readonly scope: InvocationScope;
+  readonly request: unknown;
+}
+export type StreamOpenOutcome =
+  | { readonly kind: "opened"; readonly stream_id: string }
+  | { readonly kind: "domain"; readonly error: unknown }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export interface StreamOpenResult {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly outcome: StreamOpenOutcome;
+}
+export type OutboundStreamOpenResult = StreamOpenResult;
+export interface StreamSendParams {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly stream_id: string;
+  readonly sequence: string;
+  readonly message: unknown;
+}
+export interface StreamReceiveParams {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly stream_id: string;
+}
+export type StreamCloseSendParams = StreamReceiveParams;
+export type StreamCancelParams = StreamReceiveParams;
+export type StreamActionOutcome =
+  | { readonly kind: "accepted" }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export interface StreamActionResult {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly stream_id: string;
+  readonly outcome: StreamActionOutcome;
+}
+export type StreamTerminalOutcome =
+  | { readonly kind: "success" }
+  | { readonly kind: "domain"; readonly error: unknown };
+export type StreamReceiveOutcome =
+  | { readonly kind: "message"; readonly sequence: string; readonly message: unknown }
+  | { readonly kind: "peer_half_closed" }
+  | { readonly kind: "terminal"; readonly outcome: StreamTerminalOutcome }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export interface StreamReceiveResult {
+  readonly session: string;
+  readonly correlation_id: string;
+  readonly stream_id: string;
+  readonly outcome: StreamReceiveOutcome;
+}
 export interface AuthoringCancelParams {
   readonly session: string;
   readonly scope_id: string;
@@ -395,6 +491,97 @@ export function validateOutboundCall(
     fail("outbound route belongs to another requirement");
 }
 
+export function validateEventPublish(
+  value: unknown,
+  initialize: InitializeParams,
+): asserts value is EventPublishParams {
+  validateAuthoringMessage(value, "event_publish", initialize.identity);
+  validateProvidedOperation(
+    value as EventPublishParams,
+    initialize,
+    "event publication",
+  );
+}
+
+export function validateOutboundEventPublish(
+  value: unknown,
+  initialize: InitializeParams,
+  parent: InvocationScope,
+  parentActive: boolean,
+): asserts value is OutboundEventPublishParams {
+  validateAuthoringMessage(value, "outbound_event_publish", initialize.identity, parent);
+  validateOutboundOperation(
+    value as OutboundEventPublishParams,
+    initialize,
+    parentActive,
+    "event publication",
+  );
+}
+
+export function validateEventPublishResultFor(
+  value: unknown,
+  identity: SessionIdentity,
+  correlationId: string,
+): asserts value is EventPublishResult {
+  validateAuthoringMessage(value, "event_publish_result", identity);
+  if ((value as EventPublishResult).correlation_id !== correlationId)
+    fail("response identity mismatch");
+}
+
+export function validateStreamOpen(
+  value: unknown,
+  initialize: InitializeParams,
+): asserts value is StreamOpenParams {
+  validateAuthoringMessage(value, "stream_open", initialize.identity);
+  validateProvidedOperation(value as StreamOpenParams, initialize, "stream open");
+}
+
+export function validateOutboundStreamOpen(
+  value: unknown,
+  initialize: InitializeParams,
+  parent: InvocationScope,
+  parentActive: boolean,
+): asserts value is OutboundStreamOpenParams {
+  validateAuthoringMessage(value, "outbound_stream_open", initialize.identity, parent);
+  validateOutboundOperation(
+    value as OutboundStreamOpenParams,
+    initialize,
+    parentActive,
+    "stream open",
+  );
+}
+
+export function validateStreamOpenResultFor(
+  value: unknown,
+  identity: SessionIdentity,
+  correlationId: string,
+): asserts value is StreamOpenResult {
+  validateAuthoringMessage(value, "stream_open_result", identity);
+  if ((value as StreamOpenResult).correlation_id !== correlationId)
+    fail("response identity mismatch");
+}
+
+export function validateStreamAction(
+  value: unknown,
+  identity: SessionIdentity,
+  kind: "stream_send" | "stream_receive" | "stream_close_send" | "stream_cancel",
+): asserts value is StreamSendParams | StreamReceiveParams {
+  validateAuthoringMessage(value, kind, identity);
+}
+
+export function validateStreamResultFor(
+  value: unknown,
+  identity: SessionIdentity,
+  correlationId: string,
+  streamId: string,
+  kind: "stream_action_result" | "stream_receive_result",
+): asserts value is StreamActionResult | StreamReceiveResult {
+  validateAuthoringMessage(value, kind, identity);
+  const result = value as StreamActionResult | StreamReceiveResult;
+  if (result.correlation_id !== correlationId) fail("response identity mismatch");
+  if (result.stream_id !== streamId) fail("stream result identity mismatch");
+}
+
 export function validateResultFor(
   value: unknown,
   identity: SessionIdentity,
@@ -432,6 +619,18 @@ export function validateAuthoringMessage(
     | "invoke"
     | "result"
     | "outbound_call"
+    | "event_publish"
+    | "outbound_event_publish"
+    | "event_publish_result"
+    | "stream_open"
+    | "outbound_stream_open"
+    | "stream_open_result"
+    | "stream_send"
+    | "stream_receive"
+    | "stream_close_send"
+    | "stream_cancel"
+    | "stream_action_result"
+    | "stream_receive_result"
     | "cancel"
     | "cancel_ack"
     | "settlement"
@@ -500,6 +699,71 @@ export function validateAuthoringMessage(
       if (!parent) fail("outbound call requires its parent scope");
       validateChildScope(message.scope, parent);
       return;
+    case "event_publish":
+      validateProvidedWireOperation(message, "event");
+      return;
+    case "outbound_event_publish":
+      validateOutboundWireOperation(message, "event", parent);
+      return;
+    case "event_publish_result": {
+      exact(message, ["session", "correlation_id", "outcome"]);
+      decimal(message.correlation_id, "correlation_id");
+      const outcome = object(message.outcome, "event publish outcome");
+      if (outcome.kind === "accepted") exact(outcome, ["kind"]);
+      else if (outcome.kind === "runtime") {
+        exact(outcome, ["kind", "failure"]);
+        validateRuntimeFailure(outcome.failure);
+      } else fail("unknown event publish outcome");
+      return;
+    }
+    case "stream_open":
+      validateProvidedWireOperation(message, "request");
+      return;
+    case "outbound_stream_open":
+      validateOutboundWireOperation(message, "request", parent);
+      return;
+    case "stream_open_result": {
+      exact(message, ["session", "correlation_id", "outcome"]);
+      decimal(message.correlation_id, "correlation_id");
+      const outcome = object(message.outcome, "stream open outcome");
+      if (outcome.kind === "opened") {
+        exact(outcome, ["kind", "stream_id"]);
+        decimal(outcome.stream_id, "stream_id");
+      } else if (outcome.kind === "domain") exact(outcome, ["kind", "error"]);
+      else if (outcome.kind === "runtime") {
+        exact(outcome, ["kind", "failure"]);
+        validateRuntimeFailure(outcome.failure);
+      } else fail("unknown stream open outcome");
+      return;
+    }
+    case "stream_send":
+      exact(message, ["session", "correlation_id", "stream_id", "sequence", "message"]);
+      validateStreamWireIdentity(message);
+      decimal(message.sequence, "sequence");
+      return;
+    case "stream_receive":
+    case "stream_close_send":
+    case "stream_cancel":
+      exact(message, ["session", "correlation_id", "stream_id"]);
+      validateStreamWireIdentity(message);
+      return;
+    case "stream_action_result": {
+      exact(message, ["session", "correlation_id", "stream_id", "outcome"]);
+      validateStreamWireIdentity(message);
+      const outcome = object(message.outcome, "stream action outcome");
+      if (outcome.kind === "accepted") exact(outcome, ["kind"]);
+      else if (outcome.kind === "runtime") {
+        exact(outcome, ["kind", "failure"]);
+        validateRuntimeFailure(outcome.failure);
+      } else fail("unknown stream action outcome");
+      return;
+    }
+    case "stream_receive_result": {
+      exact(message, ["session", "correlation_id", "stream_id", "outcome"]);
+      validateStreamWireIdentity(message);
+      validateStreamReceiveOutcome(message.outcome);
+      return;
+    }
     case "cancel":
       exact(message, ["session", "scope_id", "correlation_id", "reason"]);
       token(message.scope_id, "scope_id");
@@ -551,6 +815,115 @@ export function parseAuthoringFrame(
   if (new TextEncoder().encode(wire).byteLength > maxBytes)
     fail("Authoring frame exceeds max_frame_bytes");
   return parseStrictJson(wire);
+}
+
+function validateProvidedOperation(
+  value: EventPublishParams | StreamOpenParams,
+  initialize: InitializeParams,
+  interaction: string,
+): void {
+  const endpoint = initialize.provided_endpoints.find(
+    (candidate) => candidate.endpoint_id === value.endpoint_id,
+  );
+  if (!endpoint) fail(`${interaction} references an unknown endpoint_id`);
+  if (
+    endpoint.capability_id !== value.capability_id ||
+    endpoint.descriptor_version !== value.descriptor_version ||
+    endpoint.descriptor_digest !== value.descriptor_digest
+  )
+    fail(`${interaction} descriptor does not match its admitted endpoint`);
+}
+
+function validateOutboundOperation(
+  value: OutboundEventPublishParams | OutboundStreamOpenParams,
+  initialize: InitializeParams,
+  parentActive: boolean,
+  interaction: string,
+): void {
+  if (!parentActive)
+    fail(`closed parent scope cannot start an outbound ${interaction}`);
+  const route = initialize.routes.find(
+    (candidate) => candidate.route_id === value.route_id,
+  );
+  if (!route) fail(`outbound ${interaction} references an unknown route_id`);
+  if (route.requirement_id !== value.requirement_id)
+    fail("outbound route belongs to another requirement");
+}
+
+function validateProvidedWireOperation(
+  message: Record<string, unknown>,
+  valueField: "event" | "request",
+): void {
+  exact(message, [
+    "session",
+    "correlation_id",
+    "endpoint_id",
+    "capability_id",
+    "descriptor_version",
+    "descriptor_digest",
+    "operation",
+    "scope",
+    valueField,
+  ]);
+  decimal(message.correlation_id, "correlation_id");
+  token(message.endpoint_id, "endpoint_id");
+  descriptor(message);
+  token(message.operation, "operation");
+  validateInvocationScope(message.scope);
+}
+
+function validateOutboundWireOperation(
+  message: Record<string, unknown>,
+  valueField: "event" | "request",
+  parent: InvocationScope | undefined,
+): void {
+  exact(message, [
+    "session",
+    "correlation_id",
+    "requirement_id",
+    "route_id",
+    "operation",
+    "scope",
+    valueField,
+  ]);
+  decimal(message.correlation_id, "correlation_id");
+  requirementIdValue(message.requirement_id);
+  token(message.route_id, "route_id");
+  token(message.operation, "operation");
+  if (!parent) fail("outbound operation requires its parent scope");
+  validateChildScope(message.scope, parent);
+}
+
+function validateStreamWireIdentity(message: Record<string, unknown>): void {
+  decimal(message.correlation_id, "correlation_id");
+  decimal(message.stream_id, "stream_id");
+}
+
+function validateStreamReceiveOutcome(value: unknown): void {
+  const outcome = object(value, "stream receive outcome");
+  if (outcome.kind === "message") {
+    exact(outcome, ["kind", "sequence", "message"]);
+    decimal(outcome.sequence, "sequence");
+    return;
+  }
+  if (outcome.kind === "peer_half_closed") {
+    exact(outcome, ["kind"]);
+    return;
+  }
+  if (outcome.kind === "terminal") {
+    exact(outcome, ["kind", "outcome"]);
+    const terminal = object(outcome.outcome, "stream terminal outcome");
+    if (terminal.kind === "success") exact(terminal, ["kind"]);
+    else if (terminal.kind === "domain") exact(terminal, ["kind", "error"]);
+    else fail("unknown stream terminal outcome");
+    return;
+  }
+  if (outcome.kind === "runtime") {
+    exact(outcome, ["kind", "failure"]);
+    validateRuntimeFailure(outcome.failure);
+    return;
+  }
+  fail("unknown stream receive outcome");
 }
 
 function validateIdentity(value: unknown): asserts value is SessionIdentity {
