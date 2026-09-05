@@ -287,6 +287,7 @@ fn sensitive_schema_fields_generate_redacted_rust_debug() {
     assert!(artifacts.typescript.contains("value: string"));
 }
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     let artifacts = generate(Path::new(STREAM_FIXTURE)).expect("stream Descriptor should generate");
@@ -380,6 +381,18 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
             .typescript
             .contains("lowerProviderStream(result.value)")
     );
+    assert!(artifacts.typescript.contains("required(id?: string)"));
+    assert!(
+        artifacts
+            .typescript
+            .contains("invoke.openStream(\"chat\", call, payload)")
+    );
+    assert!(artifacts.typescript.contains("async closeSend()"));
+    assert!(
+        artifacts
+            .typescript
+            .contains("cancel() { stream.cancel(); }")
+    );
     assert!(
         artifacts
             .typescript
@@ -472,6 +485,17 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
             .contains("await provider.notify(context, event);")
     );
     assert!(artifacts.typescript.contains("kind: \"accepted\""));
+    assert!(artifacts.typescript.contains("required(id?: string)"));
+    assert!(
+        artifacts
+            .typescript
+            .contains("invoke.publishEvent(\"notify\", call, payload)")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("subscriberInstance: invoke.providerInstance")
+    );
 }
 
 #[allow(clippy::too_many_lines)]
@@ -615,18 +639,16 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
             .typescript
             .contains("export const CAPABILITY_ID = \"example.profile@1\";")
     );
-    assert!(
-        artifacts
-            .typescript
-            .contains("Profile: CapabilityContractReference<ProfileClient, ProfileProvider>")
-    );
+    assert!(artifacts.typescript.contains(
+        "Profile: CapabilityContractReference<ProfileClient, ProfileProvider, DependencyInvoker>"
+    ));
     assert!(
         artifacts
             .typescript
             .contains("...bindProfileDependency(), capability_id: CAPABILITY_ID")
     );
     assert!(artifacts.typescript.contains(
-        "CapabilityContractReference<Client, Provider extends object> extends CapabilityDependencyBinding<Client>"
+        "CapabilityContractReference<Client, Provider extends object, Runtime extends DependencyInvoker = DependencyInvoker> extends CapabilityDependencyBinding<Client, Runtime>"
     ));
     assert!(artifacts.typescript.contains("required(id?: string)"));
     assert!(
