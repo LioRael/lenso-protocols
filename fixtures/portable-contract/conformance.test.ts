@@ -1,5 +1,5 @@
 import {
-  bindDependency,
+  PROFILE_CONTRACT,
   bindProvider,
   decodeCorpusRoundTripRequest,
   decodeCorpusRoundTripResponse,
@@ -108,7 +108,9 @@ test("generated TypeScript profile round-trips the shared corpus", () => {
 
 test("generated dependency binding maps Host outcomes into the typed client", async () => {
   const calls: Array<{ operation: string; payload: unknown }> = [];
-  const client = bindDependency().createClient(async (operation, _context, payload) => {
+  expect(PROFILE_CONTRACT.capability_id).toBe("example.profile@1");
+  expect(PROFILE_CONTRACT.descriptor.descriptor_version).toBe("1.0.0");
+  const client = PROFILE_CONTRACT.createClient(async (operation, _context, payload) => {
     calls.push({ operation, payload });
     const request = payload as { name: string; optional_note?: string | null };
     if (request.name.length === 0) return { kind: "domain", value: "rejected" };
