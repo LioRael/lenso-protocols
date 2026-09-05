@@ -4189,6 +4189,8 @@ fn generate_rust_plugin(contract: &ContractIr) -> Result<String, CodegenError> {
     let capability_const = screaming_snake_case(&capability_name);
     let mut types = RustTypes::new();
     let mut methods = Vec::new();
+    let mut provider_methods = Vec::new();
+    let mut dispatch_arms = Vec::new();
     let mut error_codecs = Vec::new();
     let mut wire_codecs = Vec::new();
 
@@ -4255,6 +4257,12 @@ fn generate_rust_plugin(contract: &ContractIr) -> Result<String, CodegenError> {
         methods.push(format!(
             "    pub fn {method}(\n        &self,\n        context: &lenso_plugin_sdk::Ctx,\n        request: {request_type},\n    ) -> Result<{response_type}, lenso_plugin_sdk::CallError<{error_name}>> {{\n        context.request(&self.dependency, {operation_const}, &request)\n    }}"
         ));
+        provider_methods.push(format!(
+            "    fn {method}(\n        &self,\n        context: lenso_plugin_sdk::Ctx,\n        request: {request_type},\n    ) -> Result<{response_type}, {error_name}>;"
+        ));
+        dispatch_arms.push(format!(
+            "                    $crate::{operation_const} => {{\n                        let request = match lenso_plugin_sdk::__private::serde_json::from_value::<$crate::{request_type}>(request) {{\n                            Ok(request) => request,\n                            Err(_) => return lenso_plugin_sdk::InvocationOutcome::Failure(\"invalid Capability request\".to_owned()),\n                        }};\n                        match <$plugin as $crate::{capability_name}Provider>::{method}(self, context, request) {{\n                            Ok(value) => match lenso_plugin_sdk::__private::serde_json::to_value(value) {{\n                                Ok(value) => lenso_plugin_sdk::InvocationOutcome::Success(value),\n                                Err(error) => lenso_plugin_sdk::InvocationOutcome::Failure(error.to_string()),\n                            }},\n                            Err(error) => match lenso_plugin_sdk::__private::serde_json::to_value(error) {{\n                                Ok(error) => lenso_plugin_sdk::InvocationOutcome::DomainError(error),\n                                Err(error) => lenso_plugin_sdk::InvocationOutcome::Failure(error.to_string()),\n                            }},\n                        }}\n                    }}"
+        ));
     }
 
     let mut output = String::new();
@@ -4315,6 +4323,23 @@ fn generate_rust_plugin(contract: &ContractIr) -> Result<String, CodegenError> {
         output,
         "#[derive(Debug)]\npub struct {capability_name}Client {{\n    dependency: lenso_plugin_sdk::Dependency,\n}}\n\nimpl lenso_plugin_sdk::DependencyClient for {capability_name}Client {{\n    const CAPABILITY_ID: &'static str = CAPABILITY_ID;\n    const DESCRIPTOR_VERSION: &'static str = DESCRIPTOR_VERSION;\n    const DESCRIPTOR_DIGEST: &'static str = DESCRIPTOR_DIGEST;\n\n    fn from_dependency(dependency: lenso_plugin_sdk::Dependency) -> Self {{\n        Self {{ dependency }}\n    }}\n}}\n\nimpl {capability_name}Client {{\n{}\n}}\n",
         methods.join("\n\n")
+    )
+    .expect("writing to a String cannot fail");
+    let export_macro = format!("export_{}_plugin", snake_case(&capability_name));
+    let request_literals = contract
+        .operations
+        .iter()
+        .map(|operation| quote_string(&operation.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    write!(
+        output,
+        "\npub trait {capability_name}Provider {{\n{}\n}}\n\n#[macro_export]\nmacro_rules! {export_macro} {{\n    ($plugin:ty) => {{\n        impl lenso_plugin_sdk::JsonRequestHandler for $plugin {{\n            fn invoke_with_context(\n                &self,\n                context: lenso_plugin_sdk::Ctx,\n                capability: &str,\n                operation: &str,\n                request: lenso_plugin_sdk::__private::serde_json::Value,\n            ) -> lenso_plugin_sdk::InvocationOutcome {{\n                if capability != $crate::CAPABILITY_ID {{\n                    return lenso_plugin_sdk::InvocationOutcome::Failure(\"unknown Capability\".to_owned());\n                }}\n                match operation {{\n{}\n                    _ => lenso_plugin_sdk::InvocationOutcome::Failure(\"unknown Capability operation\".to_owned()),\n                }}\n            }}\n        }}\n\n        lenso_plugin_sdk::__export_json_request_handler! {{\n            $plugin {{\n                capability_id: {},\n                descriptor_version: {},\n                descriptor_digest: {},\n                requests: [{request_literals}],\n            }}\n        }}\n    }};\n}}\n",
+        provider_methods.join("\n\n"),
+        dispatch_arms.join(",\n"),
+        quote_string(&contract.capability_id),
+        quote_string(&contract.version),
+        quote_string(&contract.descriptor_digest),
     )
     .expect("writing to a String cannot fail");
     Ok(format!("{}\n", output.trim_end()))
