@@ -346,7 +346,17 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(artifacts.typescript.contains(
         "export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;"
     ));
-    assert!(!artifacts.typescript.contains("send(message:"));
+    assert!(artifacts.typescript.contains("send(message: unknown)"));
+    assert!(
+        artifacts
+            .typescript
+            .contains("async openStream(operation, context, payload)")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("kind: \"opened\", stream: binding")
+    );
     assert!(
         artifacts.typescript.contains(
             "chat(context: InvocationContext, request: ChatRequest): Promise<ChatResult>;"
@@ -430,6 +440,17 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
             .typescript
             .contains("notify(context: InvocationContext, event: NotifyRequest")
     );
+    assert!(
+        artifacts
+            .typescript
+            .contains("async publishEvent(operation, context, payload)")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("provider.notify(context, event);")
+    );
+    assert!(artifacts.typescript.contains("kind: \"accepted\""));
 }
 
 #[allow(clippy::too_many_lines)]

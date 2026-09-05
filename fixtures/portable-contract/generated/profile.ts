@@ -100,6 +100,28 @@ export type ProviderDispatchOutcome =
   | { readonly kind: "success"; readonly value: unknown }
   | { readonly kind: "domain"; readonly value: unknown }
   | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export type ProviderStreamActionOutcome =
+  | { readonly kind: "accepted" }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export type ProviderStreamReceiveOutcome =
+  | { readonly kind: "message"; readonly value: unknown }
+  | { readonly kind: "peer_half_closed" }
+  | { readonly kind: "terminal_success" }
+  | { readonly kind: "terminal_domain"; readonly value: unknown }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export interface ProviderStreamSessionBinding {
+  send(message: unknown): Promise<ProviderStreamActionOutcome>;
+  receive(): Promise<ProviderStreamReceiveOutcome>;
+  closeSend(): Promise<ProviderStreamActionOutcome>;
+  cancel(): void;
+}
+export type ProviderStreamOpenOutcome =
+  | { readonly kind: "opened"; readonly stream: ProviderStreamSessionBinding }
+  | { readonly kind: "domain"; readonly value: unknown }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+export type ProviderEventPublishOutcome =
+  | { readonly kind: "accepted" }
+  | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
 
 export interface CapabilityProviderDescriptor {
   readonly capability_id: string;
@@ -116,6 +138,16 @@ export interface CapabilityProviderBinding {
     context: InvocationContext,
     payload: unknown,
   ): Promise<ProviderDispatchOutcome>;
+  openStream(
+    operation: string,
+    context: InvocationContext,
+    payload: unknown,
+  ): Promise<ProviderStreamOpenOutcome>;
+  publishEvent(
+    operation: string,
+    context: InvocationContext,
+    payload: unknown,
+  ): Promise<ProviderEventPublishOutcome>;
 }
 
 function providerErrorMessage(error: unknown): string {
@@ -175,6 +207,20 @@ export function bindProfileProvider(
           return { kind: "runtime", failure: { kind: "plugin_failure", detail: providerErrorMessage(error) } };
         }
       }
+        default:
+          return { kind: "runtime", failure: { kind: "unknown_operation", operation } };
+      }
+    },
+    async openStream(operation, context, payload) {
+      switch (operation) {
+
+        default:
+          return { kind: "runtime", failure: { kind: "unknown_operation", operation } };
+      }
+    },
+    async publishEvent(operation, context, payload) {
+      switch (operation) {
+
         default:
           return { kind: "runtime", failure: { kind: "unknown_operation", operation } };
       }
