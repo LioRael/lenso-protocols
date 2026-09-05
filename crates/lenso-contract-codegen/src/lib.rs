@@ -4537,6 +4537,7 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     let mut types = RustTypes::new();
     let mut request_operations = Vec::new();
     let mut stream_operations = Vec::new();
+    let mut event_operations = Vec::new();
     let mut encode_arms = Vec::new();
     let mut response_arms = Vec::new();
     let mut error_arms = Vec::new();
@@ -4546,15 +4547,11 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     let mut stream_decode_arms = Vec::new();
     let mut stream_error_arms = Vec::new();
     let mut host_stream_arms = Vec::new();
+    let mut event_encode_arms = Vec::new();
+    let mut host_event_arms = Vec::new();
     let mut guest_methods = Vec::new();
 
     for operation in &contract.operations {
-        if operation.interaction == "event" {
-            return Err(CodegenError::UnsupportedInteraction {
-                operation: operation.name.clone(),
-                interaction: operation.interaction.clone(),
-            });
-        }
         let operation_name = pascal_case(&operation.name);
         let marker_name = if contract.operations.len() == 1 {
             capability_name.clone()
@@ -4607,6 +4604,15 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
                     "    pub fn {method_name}(&self, request: &{request_type}) -> Result<lenso_guest_sdk::GuestStream<H, {response_type}, {error_type}>, lenso_guest_sdk::GuestError<{error_type}>> {{\n        self.capability.open_stream({operation_const}, request)\n    }}"
                 ));
             }
+            "event" => {
+                event_operations.push(operation_const.clone());
+                event_encode_arms.push(format!(
+                    "            {operation_const} => {{\n                let value = event.downcast_ref::<{request_type}>().ok_or_else(runtime_codec_protocol_failure)?;\n                serde_json::to_value(value).map_err(|_| runtime_codec_protocol_failure())\n            }}"
+                ));
+                host_event_arms.push(format!(
+                    "            {operation_const} => {{\n                let event = serde_json::from_value::<{request_type}>(event).map_err(|_| runtime_codec_protocol_failure());\n                Box::pin(async move {{\n                    let event = event?;\n                    let handle = dependency.typed::<{marker_name}>()?;\n                    let results = handle.publish_with_context({operation_const}, context, event).await;\n                    let [result] = results.as_slice() else {{ return Err(runtime_codec_protocol_failure()); }};\n                    match result.admission() {{\n                        lenso_kernel::EventAdmission::Accepted => Ok(()),\n                        lenso_kernel::EventAdmission::Unavailable => Err(RuntimeFailure::Unavailable {{ capability: CAPABILITY_ID }}),\n                        lenso_kernel::EventAdmission::Exhausted => Err(RuntimeFailure::ResourceExhausted {{ capability: CAPABILITY_ID, operation: {operation_const}.to_owned() }}),\n                    }}\n                }})\n            }}"
+                ));
+            }
             _ => unreachable!("Descriptor validation restricts interactions"),
         }
     }
@@ -4620,6 +4626,8 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     let stream_decode_dispatch = runtime_codec_dispatch(&stream_decode_arms);
     let stream_error_dispatch = runtime_codec_dispatch(&stream_error_arms);
     let host_stream_dispatch = runtime_codec_host_dispatch(&host_stream_arms);
+    let event_encode_dispatch = runtime_codec_dispatch(&event_encode_arms);
+    let host_event_dispatch = runtime_codec_host_dispatch(&host_event_arms);
     let request_parameter = if request_operations.is_empty() {
         "_request"
     } else {
@@ -4645,6 +4653,11 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     } else {
         "value"
     };
+    let event_parameter = if event_operations.is_empty() {
+        "_event"
+    } else {
+        "event"
+    };
     let (host_request_dependency_parameter, host_request_parameter, host_request_context_parameter) =
         if request_operations.is_empty() {
             ("_dependency", "_request", "_context")
@@ -4656,6 +4669,12 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
             ("_dependency", "_request", "_context")
         } else {
             ("dependency", "request", "context")
+        };
+    let (host_event_dependency_parameter, host_event_parameter, host_event_context_parameter) =
+        if event_operations.is_empty() {
+            ("_dependency", "_event", "_context")
+        } else {
+            ("dependency", "event", "context")
         };
 
     let mut output = generate_rust(contract);
@@ -4669,9 +4688,10 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     .expect("writing generated Rust to a String cannot fail");
     write!(
         output,
-        "\n#[derive(Debug, Default)]\npub struct {codec_name};\n\nimpl lenso_runtime_codec::JsonCapabilityCodec for {codec_name} {{\n    fn capability_id(&self) -> &'static str {{ CAPABILITY_ID }}\n\n    fn descriptor_version(&self) -> &'static str {{ DESCRIPTOR_VERSION }}\n\n    fn descriptor_digest(&self) -> &'static str {{ DESCRIPTOR_DIGEST }}\n\n    fn request_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n    fn stream_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n\n    fn encode_request(&self, operation: &str, {request_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{encode_dispatch}\n    }}\n\n    fn decode_response(&self, operation: &str, {request_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{response_dispatch}\n    }}\n\n    fn decode_domain_error(&self, operation: &str, {request_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{error_dispatch}\n    }}\n\n    fn encode_stream_open(&self, operation: &str, {stream_request_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{stream_open_dispatch}\n    }}\n\n    fn encode_stream_message(&self, operation: &str, {stream_message_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{stream_encode_dispatch}\n    }}\n\n    fn decode_stream_message(&self, operation: &str, {stream_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{stream_decode_dispatch}\n    }}\n\n    fn decode_stream_domain_error(&self, operation: &str, {stream_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{stream_error_dispatch}\n    }}\n\n    fn invoke_host_request(&self, {host_request_dependency_parameter}: lenso_kernel::PluginDependencyHandle, operation: String, {host_request_parameter}: serde_json::Value, {host_request_context_parameter}: InvocationContext) -> lenso_runtime_codec::JsonHostRequestFuture {{\n{host_request_dispatch}\n    }}\n\n    fn open_host_stream(&self, {host_stream_dependency_parameter}: lenso_kernel::PluginStreamDependencyHandle, operation: String, {host_stream_parameter}: serde_json::Value, {host_stream_context_parameter}: InvocationContext) -> lenso_runtime_codec::JsonHostStreamOpenFuture {{\n{host_stream_dispatch}\n    }}\n}}\n\nfn runtime_codec_protocol_failure() -> RuntimeFailure {{ RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }} }}\n\nfn runtime_codec_unknown_operation(operation: &str) -> RuntimeFailure {{\n    RuntimeFailure::UnknownOperation {{ capability: CAPABILITY_ID, operation: operation.to_owned() }}\n}}\n",
+        "\n#[derive(Debug, Default)]\npub struct {codec_name};\n\nimpl lenso_runtime_codec::JsonCapabilityCodec for {codec_name} {{\n    fn capability_id(&self) -> &'static str {{ CAPABILITY_ID }}\n\n    fn descriptor_version(&self) -> &'static str {{ DESCRIPTOR_VERSION }}\n\n    fn descriptor_digest(&self) -> &'static str {{ DESCRIPTOR_DIGEST }}\n\n    fn request_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n    fn stream_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n    fn event_operations(&self) -> &'static [&'static str] {{ &[{}] }}\n\n    fn encode_request(&self, operation: &str, {request_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{encode_dispatch}\n    }}\n\n    fn decode_response(&self, operation: &str, {request_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{response_dispatch}\n    }}\n\n    fn decode_domain_error(&self, operation: &str, {request_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{error_dispatch}\n    }}\n\n    fn encode_stream_open(&self, operation: &str, {stream_request_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{stream_open_dispatch}\n    }}\n\n    fn encode_stream_message(&self, operation: &str, {stream_message_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{stream_encode_dispatch}\n    }}\n\n    fn decode_stream_message(&self, operation: &str, {stream_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{stream_decode_dispatch}\n    }}\n\n    fn decode_stream_domain_error(&self, operation: &str, {stream_value_parameter}: serde_json::Value) -> Result<Box<dyn std::any::Any>, RuntimeFailure> {{\n{stream_error_dispatch}\n    }}\n\n    fn encode_event(&self, operation: &str, {event_parameter}: &dyn std::any::Any) -> Result<serde_json::Value, RuntimeFailure> {{\n{event_encode_dispatch}\n    }}\n\n    fn invoke_host_request(&self, {host_request_dependency_parameter}: lenso_kernel::PluginDependencyHandle, operation: String, {host_request_parameter}: serde_json::Value, {host_request_context_parameter}: InvocationContext) -> lenso_runtime_codec::JsonHostRequestFuture {{\n{host_request_dispatch}\n    }}\n\n    fn open_host_stream(&self, {host_stream_dependency_parameter}: lenso_kernel::PluginStreamDependencyHandle, operation: String, {host_stream_parameter}: serde_json::Value, {host_stream_context_parameter}: InvocationContext) -> lenso_runtime_codec::JsonHostStreamOpenFuture {{\n{host_stream_dispatch}\n    }}\n\n    fn publish_host_event(&self, {host_event_dependency_parameter}: lenso_kernel::PluginEventDependencyHandle, operation: String, {host_event_parameter}: serde_json::Value, {host_event_context_parameter}: InvocationContext) -> futures::future::LocalBoxFuture<'static, Result<(), RuntimeFailure>> {{\n{host_event_dispatch}\n    }}\n}}\n\nfn runtime_codec_protocol_failure() -> RuntimeFailure {{ RuntimeFailure::ProtocolViolation {{ capability: CAPABILITY_ID }} }}\n\nfn runtime_codec_unknown_operation(operation: &str) -> RuntimeFailure {{\n    RuntimeFailure::UnknownOperation {{ capability: CAPABILITY_ID, operation: operation.to_owned() }}\n}}\n",
         request_operations.join(", "),
         stream_operations.join(", "),
+        event_operations.join(", "),
     )
     .expect("writing generated Rust to a String cannot fail");
     Ok(output)

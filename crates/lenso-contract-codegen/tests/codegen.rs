@@ -184,6 +184,28 @@ fn stream_descriptor_generates_exact_runtime_codec_projection() {
 }
 
 #[test]
+fn event_descriptor_generates_exact_runtime_codec_projection() {
+    let projection = generate_projection(Path::new(EVENT_FIXTURE), ProjectionLanguage::RustRuntime)
+        .expect("portable Event Descriptor should project to a runtime codec");
+
+    assert!(projection.source.contains("fn event_operations(&self)"));
+    assert!(projection.source.contains("&[NOTIFY_OPERATION]"));
+    assert!(projection.source.contains("fn encode_event(&self"));
+    assert!(projection.source.contains("fn publish_host_event(&self"));
+    assert!(
+        projection
+            .source
+            .contains("dependency.typed::<Notifications>()?")
+    );
+    assert!(
+        projection
+            .source
+            .contains("publish_with_context(NOTIFY_OPERATION, context, event)")
+    );
+    assert!(projection.source.contains("EventAdmission::Exhausted"));
+}
+
+#[test]
 fn portable_request_descriptor_generates_deterministic_provider_and_consumer_wit() {
     let projection = generate_projection(Path::new(WIT_FIXTURE), ProjectionLanguage::Wit)
         .expect("portable request Descriptor should project to WIT");
