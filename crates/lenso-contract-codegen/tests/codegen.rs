@@ -1283,6 +1283,12 @@ fn language_projections_write_and_check_independently() {
             .source
             .contains("context.request(&self.dependency")
     );
+    assert!(rust_plugin.source.contains("pub trait ProfileProvider"));
+    assert!(
+        rust_plugin
+            .source
+            .contains("macro_rules! export_profile_plugin")
+    );
     assert!(!rust_plugin.source.contains("lenso_kernel"));
 
     write_projection(FIXTURE.as_ref(), ProjectionLanguage::Rust, &rust_path)
