@@ -404,6 +404,14 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
             .contains("lowerProviderStream(result.value)")
     );
     assert!(artifacts.typescript.contains("required(id?: string)"));
+    assert!(artifacts.typescript.contains(
+        "CapabilityDependencyDeclaration<Client, Cardinality extends \"one\" | \"optional\" | \"many\", Runtime extends DependencyInvoker = DependencyInvoker>"
+    ));
+    assert!(
+        artifacts
+            .typescript
+            .contains("readonly contract: CapabilityDependencyBinding<Client, Runtime>;")
+    );
     assert!(
         artifacts
             .typescript
