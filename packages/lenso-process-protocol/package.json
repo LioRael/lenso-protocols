@@ -1,6 +1,6 @@
 {
   "name": "@lenso/process-protocol",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Language-neutral Process Protocol types and conformance helpers for Lenso Execution Adapters.",
   "type": "module",
   "license": "MIT",
