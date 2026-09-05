@@ -19,7 +19,7 @@ export type UnknownDomainError = lensoContractRuntime.UnknownDomainError;
 export type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;
 export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;
 
-export interface CapabilityContractReference<Client, Provider extends object> extends CapabilityDependencyBinding<Client> {
+export interface CapabilityContractReference<Client, Provider extends object, Runtime extends DependencyInvoker = DependencyInvoker> extends CapabilityDependencyBinding<Client, Runtime> {
   readonly kind: "lenso.capability";
   readonly capability_id: string;
   readonly descriptor_version: string;
@@ -101,7 +101,7 @@ export interface ProfileProvider {
   round_trip(context: InvocationContext, request: RoundTripRequest): Promise<RoundTripResult>;
 }
 
-export const Profile: CapabilityContractReference<ProfileClient, ProfileProvider> = { kind: "lenso.capability", ...bindProfileDependency(), capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient", descriptor: { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, operations: ["corpus_round_trip", "round_trip"], stream_operations: [], event_operations: [] }, bindProvider: bindProfileProvider, required(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "one" }; }, optional(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "optional" }; }, many(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "many" }; }, };
+export const Profile: CapabilityContractReference<ProfileClient, ProfileProvider, DependencyInvoker> = { kind: "lenso.capability", ...bindProfileDependency(), capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient", descriptor: { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, operations: ["corpus_round_trip", "round_trip"], stream_operations: [], event_operations: [] }, bindProvider: bindProfileProvider, required(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "one" }; }, optional(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "optional" }; }, many(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "many" }; }, };
 export const PROFILE_CONTRACT = Profile;
 
 export type ProviderDispatchOutcome =
@@ -247,9 +247,15 @@ export type DependencyInvoker = (
   payload: unknown,
 ) => Promise<ProviderDispatchOutcome>;
 
-export interface CapabilityDependencyBinding<Client> {
+export type InteractionDependencyInvoker = DependencyInvoker & {
+  readonly providerInstance: string;
+  openStream(operation: string, context: InvocationContext, payload: unknown): Promise<ProviderStreamOpenOutcome>;
+  publishEvent(operation: string, context: InvocationContext, payload: unknown): Promise<ProviderEventPublishOutcome>;
+};
+
+export interface CapabilityDependencyBinding<Client, Runtime extends DependencyInvoker = DependencyInvoker> {
   readonly descriptor: CapabilityProviderDescriptor;
-  createClient(invoke: DependencyInvoker): Client;
+  createClient(invoke: Runtime): Client;
 }
 
 export interface CapabilityDependencyDeclaration<Client, Cardinality extends "one" | "optional" | "many"> {
@@ -263,7 +269,16 @@ function dependencyErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function bindProfileDependency(): CapabilityDependencyBinding<ProfileClient> {
+function dependencyRuntimeError(failure: RuntimeFailure): Error {
+  return Object.assign(new Error(`Capability dependency failed: ${failure.kind}`), { failure });
+}
+
+function dependencyFailure(error: unknown): RuntimeFailure {
+  if (typeof error === "object" && error !== null && "failure" in error) return (error as { failure: RuntimeFailure }).failure;
+  return { kind: "plugin_failure", detail: dependencyErrorMessage(error) };
+}
+
+export function bindProfileDependency(): CapabilityDependencyBinding<ProfileClient, DependencyInvoker> {
   return {
     descriptor: {
       capability_id: CAPABILITY_ID,
