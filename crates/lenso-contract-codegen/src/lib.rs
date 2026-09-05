@@ -4522,7 +4522,7 @@ fn generate_rust_error_codec(error_name: &str, variants: &[ErrorVariantIr]) -> S
     output
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> {
     let capability_name = pascal_case(
         contract
@@ -4611,6 +4611,9 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
                 ));
                 host_event_arms.push(format!(
                     "            {operation_const} => {{\n                let event = serde_json::from_value::<{request_type}>(event).map_err(|_| runtime_codec_protocol_failure());\n                Box::pin(async move {{\n                    let event = event?;\n                    let handle = dependency.typed::<{marker_name}>()?;\n                    let results = handle.publish_with_context({operation_const}, context, event).await;\n                    let [result] = results.as_slice() else {{ return Err(runtime_codec_protocol_failure()); }};\n                    match result.admission() {{\n                        lenso_kernel::EventAdmission::Accepted => Ok(()),\n                        lenso_kernel::EventAdmission::Unavailable => Err(RuntimeFailure::Unavailable {{ capability: CAPABILITY_ID }}),\n                        lenso_kernel::EventAdmission::Exhausted => Err(RuntimeFailure::ResourceExhausted {{ capability: CAPABILITY_ID, operation: {operation_const}.to_owned() }}),\n                    }}\n                }})\n            }}"
+                ));
+                guest_methods.push(format!(
+                    "    pub fn {method_name}(&self, event: &{request_type}) -> Result<(), lenso_guest_sdk::GuestError<serde_json::Value>> {{\n        self.capability.publish_event({operation_const}, event)\n    }}"
                 ));
             }
             _ => unreachable!("Descriptor validation restricts interactions"),

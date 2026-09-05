@@ -192,6 +192,14 @@ fn event_descriptor_generates_exact_runtime_codec_projection() {
     assert!(projection.source.contains("&[NOTIFY_OPERATION]"));
     assert!(projection.source.contains("fn encode_event(&self"));
     assert!(projection.source.contains("fn publish_host_event(&self"));
+    assert!(projection.source.contains(
+        "pub fn notify(&self, event: &NotifyRequest) -> Result<(), lenso_guest_sdk::GuestError<serde_json::Value>>"
+    ));
+    assert!(
+        projection
+            .source
+            .contains("self.capability.publish_event(NOTIFY_OPERATION, event)")
+    );
     assert!(
         projection
             .source
