@@ -4683,9 +4683,10 @@ fn generate_rust_runtime(contract: &ContractIr) -> Result<String, CodegenError> 
     let mut output = generate_rust(contract);
     write!(
         output,
-        "\n#[derive(Clone, Copy, Debug)]\npub struct {guest_client_name}<'a, H: lenso_guest_sdk::HostImports> {{\n    capability: lenso_guest_sdk::GuestCapability<'a, H>,\n}}\n\nimpl<'a, H: lenso_guest_sdk::HostImports> {guest_client_name}<'a, H> {{\n    pub fn from_context(context: &'a lenso_guest_sdk::GuestContext<H>) -> Result<Self, lenso_guest_sdk::GuestError<serde_json::Value>> {{\n        context\n            .require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[{}], &[{}])\n            .map(|capability| Self {{ capability }})\n    }}\n\n{}\n}}\n",
+        "\n#[derive(Clone, Copy, Debug)]\npub struct {guest_client_name}<'a, H: lenso_guest_sdk::HostImports> {{\n    capability: lenso_guest_sdk::GuestCapability<'a, H>,\n}}\n\nimpl<'a, H: lenso_guest_sdk::HostImports> {guest_client_name}<'a, H> {{\n    pub fn from_context(context: &'a lenso_guest_sdk::GuestContext<H>) -> Result<Self, lenso_guest_sdk::GuestError<serde_json::Value>> {{\n        context\n            .require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[{}], &[{}], &[{}])\n            .map(|capability| Self {{ capability }})\n    }}\n\n{}\n}}\n",
         request_operations.join(", "),
         stream_operations.join(", "),
+        event_operations.join(", "),
         guest_methods.join("\n\n"),
     )
     .expect("writing generated Rust to a String cannot fail");
