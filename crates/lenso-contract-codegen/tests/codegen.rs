@@ -49,6 +49,11 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
             .contains("serde_json::from_value::<EchoError>")
     );
     assert!(projection.source.contains("&[ECHO_OPERATION]"));
+    assert!(
+        projection
+            .source
+            .contains("#[derive(Clone, Debug)]\npub struct GreetingClient")
+    );
     assert!(projection.source.contains("pub struct GreetingGuestClient"));
     assert!(projection.source.contains(
         "pub fn echo(&self, request: &EchoRequest) -> Result<EchoResponse, lenso_guest_sdk::GuestError<EchoError>>"
@@ -1277,6 +1282,11 @@ fn language_projections_write_and_check_independently() {
         rust_plugin
             .source
             .contains("impl lenso_plugin_sdk::DependencyClient")
+    );
+    assert!(
+        rust_plugin
+            .source
+            .contains("#[derive(Clone, Debug)]\npub struct ProfileClient")
     );
     assert!(
         rust_plugin

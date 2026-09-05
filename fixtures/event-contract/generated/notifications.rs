@@ -273,7 +273,7 @@ macro_rules! __lenso_native_provide_notifications {
     }};
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NotificationsClient {
     notify: NativeEventHandle<Notifications>,
 }

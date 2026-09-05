@@ -267,9 +267,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "lenso-app-plan"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36420282e91579a500634614050e5e64bba6eb2250a195ba81d72b5b0ac34fe8"
+checksum = "bae6e028eab9a55cd6562e332867c3378a0d97a68cd33d3d28e4a67db100adc3"
 dependencies = [
  "serde",
  "serde_json",
@@ -297,7 +297,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-contract-codegen"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "lenso-contract-authoring",
  "regex",
@@ -333,9 +333,9 @@ dependencies = [
 
 [[package]]
 name = "lenso-kernel"
-version = "0.3.0"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "538eaacd712c19ac3caa1d3cf6afb446feb103ca0d3860c68fcaadd04c340150"
+checksum = "8134964b379c109d12788f7750a2c32412cec1a6aea52587191e4f5a0fe6a2d7"
 dependencies = [
  "futures",
  "lenso-app-plan",

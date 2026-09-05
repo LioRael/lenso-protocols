@@ -585,7 +585,7 @@ macro_rules! __lenso_native_provide_profile {
     }};
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ProfileClient {
     corpus_round_trip: NativeRequestHandle<ProfileCorpusRoundTrip>,
     round_trip: NativeRequestHandle<ProfileRoundTrip>,
