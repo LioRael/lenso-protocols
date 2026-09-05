@@ -4599,6 +4599,10 @@ fn generate_typescript(contract: &ContractIr) -> String {
     let mut codecs = Vec::new();
     let mut request_dispatch_arms = Vec::new();
     let mut dependency_methods = Vec::new();
+    let request_only = contract
+        .operations
+        .iter()
+        .all(|operation| operation.interaction == "request");
     let operation_names = contract
         .operations
         .iter()
@@ -4750,7 +4754,12 @@ fn generate_typescript(contract: &ContractIr) -> String {
         contract.cross_lane_transfer
     )
     .expect("writing to a String cannot fail");
-    output.push_str("export type Int64 = lensoContractRuntime.Int64;\nexport type Uint64 = lensoContractRuntime.Uint64;\nexport type Bytes = lensoContractRuntime.Bytes;\nexport type Timestamp = lensoContractRuntime.Timestamp;\nexport type Duration = lensoContractRuntime.Duration;\nexport type OptionalValue<T> = lensoContractRuntime.OptionalValue<T>;\nexport type InvocationContext = lensoContractRuntime.InvocationContext;\nexport type RuntimeFailure = lensoContractRuntime.RuntimeFailure;\nexport type UnknownDomainError = lensoContractRuntime.UnknownDomainError;\nexport type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;\nexport type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;\n\nexport interface CapabilityContractReference<Client> {\n  readonly capability_id: string;\n  readonly descriptor_version: string;\n  readonly descriptor_digest: string;\n  readonly generated_client: string;\n  readonly __client?: Client;\n}\n\n");
+    output.push_str("export type Int64 = lensoContractRuntime.Int64;\nexport type Uint64 = lensoContractRuntime.Uint64;\nexport type Bytes = lensoContractRuntime.Bytes;\nexport type Timestamp = lensoContractRuntime.Timestamp;\nexport type Duration = lensoContractRuntime.Duration;\nexport type OptionalValue<T> = lensoContractRuntime.OptionalValue<T>;\nexport type InvocationContext = lensoContractRuntime.InvocationContext;\nexport type RuntimeFailure = lensoContractRuntime.RuntimeFailure;\nexport type UnknownDomainError = lensoContractRuntime.UnknownDomainError;\nexport type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;\nexport type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;\n\n");
+    if request_only {
+        output.push_str("export interface CapabilityContractReference<Client> extends CapabilityDependencyBinding<Client> {\n  readonly capability_id: string;\n  readonly descriptor_version: string;\n  readonly descriptor_digest: string;\n  readonly generated_client: string;\n  readonly __client?: Client;\n}\n\n");
+    } else {
+        output.push_str("export interface CapabilityContractReference<Client> {\n  readonly capability_id: string;\n  readonly descriptor_version: string;\n  readonly descriptor_digest: string;\n  readonly generated_client: string;\n  readonly __client?: Client;\n}\n\n");
+    }
     if has_event_operations {
         output.push_str("export type EventAdmission = lensoContractRuntime.EventAdmission;\nexport type EventPublishResult = lensoContractRuntime.EventPublishResult;\n\n");
     }
@@ -4773,9 +4782,14 @@ fn generate_typescript(contract: &ContractIr) -> String {
         providers.join("\n")
     )
     .expect("writing to a String cannot fail");
+    let dependency_binding = if request_only {
+        format!("...bind{capability_name}Dependency(), ")
+    } else {
+        String::new()
+    };
     writeln!(
         output,
-        "\nexport const {capability_const}_CONTRACT: CapabilityContractReference<{capability_name}Client> = {{ capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: {} }};",
+        "\nexport const {capability_const}_CONTRACT: CapabilityContractReference<{capability_name}Client> = {{ {dependency_binding}capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: {} }};",
         quote_string(&format!("{capability_name}Client")),
     )
     .expect("writing to a String cannot fail");
@@ -4785,11 +4799,7 @@ fn generate_typescript(contract: &ContractIr) -> String {
         request_dispatch_arms.join("\n")
     )
     .expect("writing to a String cannot fail");
-    if contract
-        .operations
-        .iter()
-        .all(|operation| operation.interaction == "request")
-    {
+    if request_only {
         write!(
             output,
             "\nexport type DependencyInvoker = (\n  operation: string,\n  context: InvocationContext,\n  payload: unknown,\n) => Promise<ProviderDispatchOutcome>;\n\nexport interface CapabilityDependencyBinding<Client> {{\n  readonly descriptor: CapabilityProviderDescriptor;\n  createClient(invoke: DependencyInvoker): Client;\n}}\n\nfunction dependencyErrorMessage(error: unknown): string {{\n  return error instanceof Error ? error.message : String(error);\n}}\n\nexport function bind{capability_name}Dependency(): CapabilityDependencyBinding<{capability_name}Client> {{\n  return {{\n    descriptor: {{\n      capability_id: CAPABILITY_ID,\n      descriptor_version: DESCRIPTOR_VERSION,\n      operations: [{operation_names}],\n      stream_operations: [],\n      event_operations: [],\n    }},\n    createClient(invoke) {{\n      return {{\n{}\n      }};\n    }},\n  }};\n}}\n\nexport const bindDependency = bind{capability_name}Dependency;\n",

@@ -573,6 +573,14 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
             .typescript
             .contains("PROFILE_CONTRACT: CapabilityContractReference<ProfileClient>")
     );
+    assert!(
+        artifacts
+            .typescript
+            .contains("{ ...bindProfileDependency(), capability_id: CAPABILITY_ID")
+    );
+    assert!(artifacts.typescript.contains(
+        "CapabilityContractReference<Client> extends CapabilityDependencyBinding<Client>"
+    ));
     assert!(artifacts.typescript.contains(&format!(
         "export const DESCRIPTOR_DIGEST = \"{}\";",
         artifacts.metadata.descriptor_digest

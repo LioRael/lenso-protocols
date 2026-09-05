@@ -19,7 +19,7 @@ export type UnknownDomainError = lensoContractRuntime.UnknownDomainError;
 export type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;
 export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;
 
-export interface CapabilityContractReference<Client> {
+export interface CapabilityContractReference<Client> extends CapabilityDependencyBinding<Client> {
   readonly capability_id: string;
   readonly descriptor_version: string;
   readonly descriptor_digest: string;
@@ -94,7 +94,7 @@ export interface ProfileProvider {
   round_trip(context: InvocationContext, request: RoundTripRequest): Promise<RoundTripResult>;
 }
 
-export const PROFILE_CONTRACT: CapabilityContractReference<ProfileClient> = { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient" };
+export const PROFILE_CONTRACT: CapabilityContractReference<ProfileClient> = { ...bindProfileDependency(), capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient" };
 
 export type ProviderDispatchOutcome =
   | { readonly kind: "success"; readonly value: unknown }
