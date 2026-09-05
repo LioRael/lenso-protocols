@@ -83,7 +83,15 @@ export function authoringChildProofMessage(
 /** Exact bytes authenticating one child-to-Host callback request. */
 export function authoringCallbackProofMessage(
   session: string,
-  method: "lenso.call" | "lenso.settled",
+  method:
+    | "lenso.call"
+    | "lenso.event.publish"
+    | "lenso.stream.open"
+    | "lenso.stream.send"
+    | "lenso.stream.receive"
+    | "lenso.stream.close_send"
+    | "lenso.stream.cancel"
+    | "lenso.settled",
   params: unknown,
 ): Uint8Array {
   const sessionBytes = decodeBase64Url32(session, "session");

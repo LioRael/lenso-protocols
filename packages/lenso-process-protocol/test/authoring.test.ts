@@ -6,9 +6,15 @@ import {
   validateInitialize,
   validateInitializeForRuntimeProfile,
   validateInitialized,
+  validateEventPublish,
+  validateEventPublishResultFor,
   validateInvoke,
   validateOutboundCall,
   validateResultFor,
+  validateStreamAction,
+  validateStreamOpen,
+  validateStreamOpenResultFor,
+  validateStreamResultFor,
   type InitializeParams,
   type InvocationScope,
   type SessionIdentity,
@@ -169,5 +175,80 @@ describe("Authoring V2 shared values", () => {
         true,
       ),
     ).toThrow("another requirement");
+  });
+
+  test("validates Event admission and ordered Stream session identities", () => {
+    const initialize = fixture.initialize as InitializeParams;
+    const identity = initialize.identity;
+    const common = fixture.invoke;
+    const event = {
+      ...common,
+      operation: "changed",
+      event: { key: "a" },
+    } as Record<string, unknown>;
+    delete event.payload;
+    validateEventPublish(event, initialize);
+    validateEventPublishResultFor(
+      {
+        session: identity.session,
+        correlation_id: common.correlation_id,
+        outcome: { kind: "accepted" },
+      },
+      identity,
+      common.correlation_id,
+    );
+
+    const open = {
+      ...common,
+      correlation_id: "3",
+      operation: "watch",
+      request: { key: "a" },
+    } as Record<string, unknown>;
+    delete open.payload;
+    validateStreamOpen(open, initialize);
+    validateStreamOpenResultFor(
+      {
+        session: identity.session,
+        correlation_id: "3",
+        outcome: { kind: "opened", stream_id: "1" },
+      },
+      identity,
+      "3",
+    );
+
+    const send = {
+      session: identity.session,
+      correlation_id: "4",
+      stream_id: "1",
+      sequence: "0",
+      message: { text: "hello" },
+    };
+    validateStreamAction(send, identity, "stream_send");
+    validateStreamResultFor(
+      {
+        session: identity.session,
+        correlation_id: "4",
+        stream_id: "1",
+        outcome: { kind: "accepted" },
+      },
+      identity,
+      "4",
+      "1",
+      "stream_action_result",
+    );
+    expect(() =>
+      validateStreamResultFor(
+        {
+          session: identity.session,
+          correlation_id: "5",
+          stream_id: "2",
+          outcome: { kind: "peer_half_closed" },
+        },
+        identity,
+        "5",
+        "1",
+        "stream_receive_result",
+      ),
+    ).toThrow("stream result identity mismatch");
   });
 });
