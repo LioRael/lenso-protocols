@@ -18,13 +18,49 @@ export type RuntimeFailure = lensoContractRuntime.RuntimeFailure;
 export type UnknownDomainError = lensoContractRuntime.UnknownDomainError;
 export type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;
 export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;
+export type ProviderStream<Message, DomainError> = StreamSession<Message, DomainError> | AsyncIterable<Message>;
 
-export interface CapabilityContractReference<Client> extends CapabilityDependencyBinding<Client> {
+class ServerOutputStreamInputError extends Error {}
+
+function isAsyncIterable<Message>(value: unknown): value is AsyncIterable<Message> {
+  return typeof value === "object" && value !== null && Symbol.asyncIterator in value;
+}
+
+function lowerProviderStream<Message, DomainError>(stream: ProviderStream<Message, DomainError>): StreamSession<Message, DomainError> {
+  if (!isAsyncIterable<Message>(stream)) return stream;
+  const iterator = stream[Symbol.asyncIterator]();
+  let cancelled = false;
+  return {
+    async send() { throw new ServerOutputStreamInputError("server-output stream does not accept inbound messages"); },
+    async receive() {
+      if (cancelled) return { kind: "terminal", outcome: { ok: true } };
+      const next = await iterator.next();
+      return next.done
+        ? { kind: "terminal", outcome: { ok: true } }
+        : { kind: "message", message: next.value };
+    },
+    async closeSend() {},
+    cancel() {
+      cancelled = true;
+      const closing = iterator.return?.();
+      if (closing !== undefined) void Promise.resolve(closing).catch(() => undefined);
+    },
+  };
+}
+
+export interface CapabilityContractReference<Client, Provider extends object> extends CapabilityDependencyBinding<Client> {
+  readonly kind: "lenso.capability";
   readonly capability_id: string;
   readonly descriptor_version: string;
   readonly descriptor_digest: string;
   readonly generated_client: string;
+  readonly descriptor: CapabilityProviderDescriptor;
+  bindProvider(provider: Provider): CapabilityProviderBinding;
+  required(id?: string): CapabilityDependencyDeclaration<Client, "one">;
+  optional(id?: string): CapabilityDependencyDeclaration<Client, "optional">;
+  many(id?: string): CapabilityDependencyDeclaration<Client, "many">;
   readonly __client?: Client;
+  readonly __provider?: Provider;
 }
 
 export interface CorpusRoundTripRequest {
@@ -94,7 +130,8 @@ export interface ProfileProvider {
   round_trip(context: InvocationContext, request: RoundTripRequest): Promise<RoundTripResult>;
 }
 
-export const PROFILE_CONTRACT: CapabilityContractReference<ProfileClient> = { ...bindProfileDependency(), capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient" };
+export const Profile: CapabilityContractReference<ProfileClient, ProfileProvider> = { kind: "lenso.capability", ...bindProfileDependency(), capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "ProfileClient", descriptor: { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, operations: ["corpus_round_trip", "round_trip"], stream_operations: [], event_operations: [] }, bindProvider: bindProfileProvider, required(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "one" }; }, optional(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "optional" }; }, many(id) { return { kind: "lenso.dependency", ...(id === undefined ? {} : { id }), contract: this, cardinality: "many" }; }, };
+export const PROFILE_CONTRACT = Profile;
 
 export type ProviderDispatchOutcome =
   | { readonly kind: "success"; readonly value: unknown }
@@ -109,6 +146,7 @@ export type ProviderStreamReceiveOutcome =
   | { readonly kind: "terminal_success" }
   | { readonly kind: "terminal_domain"; readonly value: unknown }
   | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+/** @internal Runtime lowering seam. */
 export interface ProviderStreamSessionBinding {
   send(message: unknown): Promise<ProviderStreamActionOutcome>;
   receive(): Promise<ProviderStreamReceiveOutcome>;
@@ -131,6 +169,7 @@ export interface CapabilityProviderDescriptor {
   readonly event_operations: ReadonlyArray<string>;
 }
 
+/** @internal Runtime lowering seam. */
 export interface CapabilityProviderBinding {
   readonly descriptor: CapabilityProviderDescriptor;
   invokeRequest(
@@ -240,6 +279,13 @@ export type DependencyInvoker = (
 export interface CapabilityDependencyBinding<Client> {
   readonly descriptor: CapabilityProviderDescriptor;
   createClient(invoke: DependencyInvoker): Client;
+}
+
+export interface CapabilityDependencyDeclaration<Client, Cardinality extends "one" | "optional" | "many"> {
+  readonly kind: "lenso.dependency";
+  readonly id?: string;
+  readonly contract: CapabilityDependencyBinding<Client>;
+  readonly cardinality: Cardinality;
 }
 
 function dependencyErrorMessage(error: unknown): string {

@@ -18,13 +18,46 @@ export type RuntimeFailure = lensoContractRuntime.RuntimeFailure;
 export type UnknownDomainError = lensoContractRuntime.UnknownDomainError;
 export type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;
 export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;
+export type ProviderStream<Message, DomainError> = StreamSession<Message, DomainError> | AsyncIterable<Message>;
 
-export interface CapabilityContractReference<Client> {
+class ServerOutputStreamInputError extends Error {}
+
+function isAsyncIterable<Message>(value: unknown): value is AsyncIterable<Message> {
+  return typeof value === "object" && value !== null && Symbol.asyncIterator in value;
+}
+
+function lowerProviderStream<Message, DomainError>(stream: ProviderStream<Message, DomainError>): StreamSession<Message, DomainError> {
+  if (!isAsyncIterable<Message>(stream)) return stream;
+  const iterator = stream[Symbol.asyncIterator]();
+  let cancelled = false;
+  return {
+    async send() { throw new ServerOutputStreamInputError("server-output stream does not accept inbound messages"); },
+    async receive() {
+      if (cancelled) return { kind: "terminal", outcome: { ok: true } };
+      const next = await iterator.next();
+      return next.done
+        ? { kind: "terminal", outcome: { ok: true } }
+        : { kind: "message", message: next.value };
+    },
+    async closeSend() {},
+    cancel() {
+      cancelled = true;
+      const closing = iterator.return?.();
+      if (closing !== undefined) void Promise.resolve(closing).catch(() => undefined);
+    },
+  };
+}
+
+export interface CapabilityContractReference<Client, Provider extends object> {
+  readonly kind: "lenso.capability";
   readonly capability_id: string;
   readonly descriptor_version: string;
   readonly descriptor_digest: string;
   readonly generated_client: string;
+  readonly descriptor: CapabilityProviderDescriptor;
+  bindProvider(provider: Provider): CapabilityProviderBinding;
   readonly __client?: Client;
+  readonly __provider?: Provider;
 }
 
 export type EventAdmission = lensoContractRuntime.EventAdmission;
@@ -57,10 +90,11 @@ export interface NotificationsClient {
 }
 
 export interface NotificationsProvider {
-  notify(context: InvocationContext, event: NotifyRequest): void;
+  notify(context: InvocationContext, event: NotifyRequest): void | Promise<void>;
 }
 
-export const NOTIFICATIONS_CONTRACT: CapabilityContractReference<NotificationsClient> = { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "NotificationsClient" };
+export const Notifications: CapabilityContractReference<NotificationsClient, NotificationsProvider> = { kind: "lenso.capability", capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, descriptor_digest: DESCRIPTOR_DIGEST, generated_client: "NotificationsClient", descriptor: { capability_id: CAPABILITY_ID, descriptor_version: DESCRIPTOR_VERSION, operations: ["notify"], stream_operations: [], event_operations: ["notify"] }, bindProvider: bindNotificationsProvider, };
+export const NOTIFICATIONS_CONTRACT = Notifications;
 
 export type ProviderDispatchOutcome =
   | { readonly kind: "success"; readonly value: unknown }
@@ -75,6 +109,7 @@ export type ProviderStreamReceiveOutcome =
   | { readonly kind: "terminal_success" }
   | { readonly kind: "terminal_domain"; readonly value: unknown }
   | { readonly kind: "runtime"; readonly failure: RuntimeFailure };
+/** @internal Runtime lowering seam. */
 export interface ProviderStreamSessionBinding {
   send(message: unknown): Promise<ProviderStreamActionOutcome>;
   receive(): Promise<ProviderStreamReceiveOutcome>;
@@ -97,6 +132,7 @@ export interface CapabilityProviderDescriptor {
   readonly event_operations: ReadonlyArray<string>;
 }
 
+/** @internal Runtime lowering seam. */
 export interface CapabilityProviderBinding {
   readonly descriptor: CapabilityProviderDescriptor;
   invokeRequest(
@@ -155,7 +191,7 @@ export function bindNotificationsProvider(
           return { kind: "runtime", failure: { kind: "protocol_violation", detail: providerErrorMessage(error) } };
         }
         try {
-          provider.notify(context, event);
+          await provider.notify(context, event);
           return { kind: "accepted" };
         } catch (error) {
           return { kind: "runtime", failure: { kind: "plugin_failure", detail: providerErrorMessage(error) } };

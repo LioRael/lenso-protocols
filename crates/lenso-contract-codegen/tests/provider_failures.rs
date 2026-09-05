@@ -44,7 +44,7 @@ fn stream_providers_preserve_domain_and_runtime_failures() {
     );
     assert!(
         artifacts.typescript.contains(
-            "chat(context: InvocationContext, request: ChatRequest): Promise<ChatResult>;"
+            "chat(context: InvocationContext, request: ChatRequest): ChatProviderOutput;"
         )
     );
 }

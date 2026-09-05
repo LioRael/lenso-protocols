@@ -346,6 +346,9 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     assert!(artifacts.typescript.contains(
         "export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;"
     ));
+    assert!(artifacts.typescript.contains(
+        "export type ProviderStream<Message, DomainError> = StreamSession<Message, DomainError> | AsyncIterable<Message>;"
+    ));
     assert!(artifacts.typescript.contains("send(message: unknown)"));
     assert!(
         artifacts
@@ -359,8 +362,28 @@ fn stream_descriptors_generate_bidirectional_rust_and_typescript_bindings() {
     );
     assert!(
         artifacts.typescript.contains(
-            "chat(context: InvocationContext, request: ChatRequest): Promise<ChatResult>;"
+            "chat(context: InvocationContext, request: ChatRequest): ChatProviderOutput;"
         )
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("ChatProviderOutput = AsyncIterable<ChatResponse>")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("isAsyncIterable<ChatResponse>(provided)")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("lowerProviderStream(result.value)")
+    );
+    assert!(
+        artifacts
+            .typescript
+            .contains("server-output stream does not accept inbound messages")
     );
 }
 
@@ -435,11 +458,9 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
     assert!(artifacts.typescript.contains(
         "notify(event: NotifyRequest, context?: InvocationContext): Promise<NotifyResult>;"
     ));
-    assert!(
-        artifacts
-            .typescript
-            .contains("notify(context: InvocationContext, event: NotifyRequest")
-    );
+    assert!(artifacts.typescript.contains(
+        "notify(context: InvocationContext, event: NotifyRequest): void | Promise<void>;"
+    ));
     assert!(
         artifacts
             .typescript
@@ -448,7 +469,7 @@ fn event_descriptors_generate_ephemeral_fan_out_bindings() {
     assert!(
         artifacts
             .typescript
-            .contains("provider.notify(context, event);")
+            .contains("await provider.notify(context, event);")
     );
     assert!(artifacts.typescript.contains("kind: \"accepted\""));
 }
@@ -597,16 +618,22 @@ fn one_descriptor_generates_matching_rust_and_typescript_bindings() {
     assert!(
         artifacts
             .typescript
-            .contains("PROFILE_CONTRACT: CapabilityContractReference<ProfileClient>")
+            .contains("Profile: CapabilityContractReference<ProfileClient, ProfileProvider>")
     );
     assert!(
         artifacts
             .typescript
-            .contains("{ ...bindProfileDependency(), capability_id: CAPABILITY_ID")
+            .contains("...bindProfileDependency(), capability_id: CAPABILITY_ID")
     );
     assert!(artifacts.typescript.contains(
-        "CapabilityContractReference<Client> extends CapabilityDependencyBinding<Client>"
+        "CapabilityContractReference<Client, Provider extends object> extends CapabilityDependencyBinding<Client>"
     ));
+    assert!(artifacts.typescript.contains("required(id?: string)"));
+    assert!(
+        artifacts
+            .typescript
+            .contains("export const PROFILE_CONTRACT = Profile;")
+    );
     assert!(artifacts.typescript.contains(&format!(
         "export const DESCRIPTOR_DIGEST = \"{}\";",
         artifacts.metadata.descriptor_digest
