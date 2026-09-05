@@ -18,35 +18,6 @@ export type RuntimeFailure = lensoContractRuntime.RuntimeFailure;
 export type UnknownDomainError = lensoContractRuntime.UnknownDomainError;
 export type StreamEvent<Message, DomainError> = lensoContractRuntime.StreamEvent<Message, DomainError>;
 export type StreamSession<Message, DomainError> = lensoContractRuntime.StreamSession<Message, DomainError>;
-export type ProviderStream<Message, DomainError> = StreamSession<Message, DomainError> | AsyncIterable<Message>;
-
-class ServerOutputStreamInputError extends Error {}
-
-function isAsyncIterable<Message>(value: unknown): value is AsyncIterable<Message> {
-  return typeof value === "object" && value !== null && Symbol.asyncIterator in value;
-}
-
-function lowerProviderStream<Message, DomainError>(stream: ProviderStream<Message, DomainError>): StreamSession<Message, DomainError> {
-  if (!isAsyncIterable<Message>(stream)) return stream;
-  const iterator = stream[Symbol.asyncIterator]();
-  let cancelled = false;
-  return {
-    async send() { throw new ServerOutputStreamInputError("server-output stream does not accept inbound messages"); },
-    async receive() {
-      if (cancelled) return { kind: "terminal", outcome: { ok: true } };
-      const next = await iterator.next();
-      return next.done
-        ? { kind: "terminal", outcome: { ok: true } }
-        : { kind: "message", message: next.value };
-    },
-    async closeSend() {},
-    cancel() {
-      cancelled = true;
-      const closing = iterator.return?.();
-      if (closing !== undefined) void Promise.resolve(closing).catch(() => undefined);
-    },
-  };
-}
 
 export interface CapabilityContractReference<Client, Provider extends object> extends CapabilityDependencyBinding<Client> {
   readonly kind: "lenso.capability";
