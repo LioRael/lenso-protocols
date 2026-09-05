@@ -27,9 +27,9 @@ export interface CapabilityContractReference<Client, Provider extends object, Ru
   readonly generated_client: string;
   readonly descriptor: CapabilityProviderDescriptor;
   bindProvider(provider: Provider): CapabilityProviderBinding;
-  required(id?: string): CapabilityDependencyDeclaration<Client, "one">;
-  optional(id?: string): CapabilityDependencyDeclaration<Client, "optional">;
-  many(id?: string): CapabilityDependencyDeclaration<Client, "many">;
+  required(id?: string): CapabilityDependencyDeclaration<Client, "one", Runtime>;
+  optional(id?: string): CapabilityDependencyDeclaration<Client, "optional", Runtime>;
+  many(id?: string): CapabilityDependencyDeclaration<Client, "many", Runtime>;
   readonly __client?: Client;
   readonly __provider?: Provider;
 }
@@ -258,10 +258,10 @@ export interface CapabilityDependencyBinding<Client, Runtime extends DependencyI
   createClient(invoke: Runtime): Client;
 }
 
-export interface CapabilityDependencyDeclaration<Client, Cardinality extends "one" | "optional" | "many"> {
+export interface CapabilityDependencyDeclaration<Client, Cardinality extends "one" | "optional" | "many", Runtime extends DependencyInvoker = DependencyInvoker> {
   readonly kind: "lenso.dependency";
   readonly id?: string;
-  readonly contract: CapabilityDependencyBinding<Client>;
+  readonly contract: CapabilityDependencyBinding<Client, Runtime>;
   readonly cardinality: Cardinality;
 }
 
