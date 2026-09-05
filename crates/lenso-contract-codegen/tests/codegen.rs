@@ -1270,6 +1270,21 @@ fn language_projections_write_and_check_independently() {
     assert_eq!(rust.language, ProjectionLanguage::Rust);
     assert!(rust.source.contains("pub const CAPABILITY_ID"));
 
+    let rust_plugin = generate_projection(FIXTURE.as_ref(), ProjectionLanguage::RustPlugin)
+        .expect("portable Rust Plugin client should generate independently");
+    assert_eq!(rust_plugin.language, ProjectionLanguage::RustPlugin);
+    assert!(
+        rust_plugin
+            .source
+            .contains("impl lenso_plugin_sdk::DependencyClient")
+    );
+    assert!(
+        rust_plugin
+            .source
+            .contains("context.request(&self.dependency")
+    );
+    assert!(!rust_plugin.source.contains("lenso_kernel"));
+
     write_projection(FIXTURE.as_ref(), ProjectionLanguage::Rust, &rust_path)
         .expect("Rust should generate without a TypeScript output");
     check_projection(FIXTURE.as_ref(), ProjectionLanguage::Rust, &rust_path)

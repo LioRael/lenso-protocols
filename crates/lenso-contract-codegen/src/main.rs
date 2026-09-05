@@ -11,7 +11,7 @@ use lenso_contract_codegen::{
 };
 
 fn usage() -> &'static str {
-    "usage:\n  lenso-contract-codegen generate <descriptor> <rust-output> <typescript-output>\n  lenso-contract-codegen generate <descriptor> --rust <output>\n  lenso-contract-codegen generate <descriptor> --rust-runtime <output>\n  lenso-contract-codegen generate <descriptor> --typescript <output>\n  lenso-contract-codegen generate <descriptor> --wit <output>\n  lenso-contract-codegen check <descriptor> <rust-output> <typescript-output>\n  lenso-contract-codegen check <descriptor> --rust <output>\n  lenso-contract-codegen check <descriptor> --rust-runtime <output>\n  lenso-contract-codegen check <descriptor> --typescript <output>\n  lenso-contract-codegen check <descriptor> --wit <output>\n  lenso-contract-codegen workspace <check|generate> [--manifest-path <Cargo.toml>]\n  lenso-contract-codegen lint <old-descriptor> <new-descriptor>"
+    "usage:\n  lenso-contract-codegen generate <descriptor> <rust-output> <typescript-output>\n  lenso-contract-codegen generate <descriptor> --rust <output>\n  lenso-contract-codegen generate <descriptor> --rust-runtime <output>\n  lenso-contract-codegen generate <descriptor> --rust-plugin <output>\n  lenso-contract-codegen generate <descriptor> --typescript <output>\n  lenso-contract-codegen generate <descriptor> --wit <output>\n  lenso-contract-codegen check <descriptor> <rust-output> <typescript-output>\n  lenso-contract-codegen check <descriptor> --rust <output>\n  lenso-contract-codegen check <descriptor> --rust-runtime <output>\n  lenso-contract-codegen check <descriptor> --rust-plugin <output>\n  lenso-contract-codegen check <descriptor> --typescript <output>\n  lenso-contract-codegen check <descriptor> --wit <output>\n  lenso-contract-codegen workspace <check|generate> [--manifest-path <Cargo.toml>]\n  lenso-contract-codegen lint <old-descriptor> <new-descriptor>"
 }
 
 #[derive(Debug)]
@@ -29,6 +29,7 @@ fn selected_projection(arguments: &[String]) -> Option<(ProjectionLanguage, &Pat
     let language = match arguments[2].as_str() {
         "--rust" => ProjectionLanguage::Rust,
         "--rust-runtime" => ProjectionLanguage::RustRuntime,
+        "--rust-plugin" => ProjectionLanguage::RustPlugin,
         "--typescript" => ProjectionLanguage::TypeScript,
         "--wit" => ProjectionLanguage::Wit,
         _ => return None,
@@ -182,6 +183,7 @@ fn workspace_contracts(manifest: &Path) -> Result<Vec<WorkspaceContract>, String
         let language = match field("projection")? {
             "rust" => ProjectionLanguage::Rust,
             "rust-runtime" => ProjectionLanguage::RustRuntime,
+            "rust-plugin" => ProjectionLanguage::RustPlugin,
             "typescript" => ProjectionLanguage::TypeScript,
             "wit" => ProjectionLanguage::Wit,
             value => return Err(format!("unsupported contract projection `{value}`")),
@@ -354,6 +356,33 @@ mod tests {
         .expect("runtime codec projection should check independently");
 
         std::fs::remove_dir_all(root).expect("temporary directory should be removable");
+    }
+
+    #[test]
+    fn portable_rust_plugin_projection_is_selectable() {
+        let root = std::env::temp_dir().join(format!(
+            "lenso-contract-codegen-cli-rust-plugin-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let output = root.join("plugin.rs");
+        run(&[
+            "generate".to_owned(),
+            FIXTURE.to_owned(),
+            "--rust-plugin".to_owned(),
+            output.display().to_string(),
+        ])
+        .expect("portable Rust Plugin projection should generate");
+        let source = std::fs::read_to_string(&output).unwrap();
+        assert!(source.contains("lenso_plugin_sdk::DependencyClient"));
+        run(&[
+            "check".to_owned(),
+            FIXTURE.to_owned(),
+            "--rust-plugin".to_owned(),
+            output.display().to_string(),
+        ])
+        .expect("portable Rust Plugin projection should check");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
