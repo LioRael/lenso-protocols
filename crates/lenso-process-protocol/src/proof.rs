@@ -118,7 +118,17 @@ pub fn authoring_callback_proof_message(
     method: &str,
     params: &Value,
 ) -> Result<Vec<u8>, ProtocolError> {
-    if method != "lenso.call" && method != "lenso.settled" {
+    if !matches!(
+        method,
+        "lenso.call"
+            | "lenso.event.publish"
+            | "lenso.stream.open"
+            | "lenso.stream.send"
+            | "lenso.stream.receive"
+            | "lenso.stream.close_send"
+            | "lenso.stream.cancel"
+            | "lenso.settled"
+    ) {
         return Err(ProtocolError::new("unsupported Authoring callback method"));
     }
     let session = decode_base64url_32("session", session)?;
