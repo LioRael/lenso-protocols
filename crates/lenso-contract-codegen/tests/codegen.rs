@@ -61,7 +61,7 @@ fn request_descriptor_generates_exact_runtime_codec_projection() {
     assert!(
         projection
             .source
-            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[ECHO_OPERATION], &[])")
+            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[ECHO_OPERATION], &[], &[])")
     );
     assert!(projection.source.contains("fn invoke_host_request(&self"));
     assert!(
@@ -130,7 +130,7 @@ fn stream_descriptor_generates_exact_runtime_codec_projection() {
     assert!(
         projection
             .source
-            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[], &[CHAT_OPERATION])")
+            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[], &[CHAT_OPERATION], &[])")
     );
     assert!(projection.source.contains("fn open_host_stream(&self"));
     assert!(
@@ -199,6 +199,11 @@ fn event_descriptor_generates_exact_runtime_codec_projection() {
         projection
             .source
             .contains("self.capability.publish_event(NOTIFY_OPERATION, event)")
+    );
+    assert!(
+        projection
+            .source
+            .contains(".require(CAPABILITY_ID, DESCRIPTOR_VERSION, &[], &[], &[NOTIFY_OPERATION])")
     );
     assert!(
         projection
