@@ -1,5 +1,11 @@
 # Lenso Protocols
 
+> **Source location:** This repository retains pre-consolidation history. New
+> Rust protocol work belongs in [LioRael/lenso](https://github.com/LioRael/lenso),
+> and TypeScript protocol work belongs in [LioRael/lenso-js](https://github.com/LioRael/lenso-js),
+> under [ADR 0077](https://github.com/LioRael/lenso/blob/main/docs/adr/0077-consolidate-the-rust-main-chain-by-language-and-product.md).
+> The description below documents this historical checkout.
+
 This repository owns runtime-neutral protocol tooling and portable conformance
 artifacts for Lenso. It does not own the Kernel, host runtimes, product
 Capabilities, or Plugin implementations.
